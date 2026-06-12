@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+target/
+
+# Build outputs
+dist/
+dist-portable/
+src-tauri/target/
+
+# Binaries — shipped only in the portable release zip, never committed
+resources/*.exe
+resources/*.dll
+resources/Xray-windows-64/
+resources/wintun/
+# zapret2 keeps its config/lua/blobs; its prebuilt binary ships in the release
+resources/zapret2/binaries/
+nul
+*.7z
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor directories and files
+.vscode/
+.claude/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Tauri
+src-tauri/Cargo.lock
+
+# Local config and data (for development)
+data/
+*.local
+
+# Oversized prefilled default list (>100MB, exceeds GitHub limit) — kept locally only
+src-tauri/default_zapret_routes.json
+
+# OS
+Thumbs.db

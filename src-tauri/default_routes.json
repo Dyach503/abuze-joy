@@ -1,0 +1,1406 @@
+{
+  "domains": [
+    {
+      "value": "google.com",
+      "enabled": false,
+      "note": "Google"
+    },
+    {
+      "value": "youtube.com",
+      "enabled": false,
+      "note": "YouTube"
+    },
+    {
+      "value": "chatgpt.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "openai.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "2ip.ru",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "claude.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "claude.ai",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "rutracker.org",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "2fa.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "abuse.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "account.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "admin.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "alpha.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "analytics.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "android.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "api.t.me",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "api.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "api1.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "api2.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "api3.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "api-docs.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "apollo.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "ares.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "assets.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "athena.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "aurora.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "auth.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "beta.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "blog.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "bot.t.me",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "bot.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "bots.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "business.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "careers.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "cdn.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "cdn1.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "cdn2.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "cdn3.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "cdn4.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "cdn5.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "cdn6.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "cdn7.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "cdn8.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "cdn9.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "changelog.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "channels.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "community.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "contact.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "contest.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "control.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "core.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "corp.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "dashboard.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "dc1.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "dc2.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "dc3.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "dc4.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "dc5.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "de.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "demo.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "desktop.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "dev.t.me",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "dev.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "developers.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "devtest.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "docs.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "donate.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "email.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "enterprise.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "faq.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "feedback.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "files.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "flora.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "forum.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "fr.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "ftp.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "groups.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "hades.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "health.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "help.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "hermes.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "hire.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "i18n.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "image.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "imap.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "img.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "internal.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "ios.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "jobs.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "l10n.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "lang.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "linux.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "local.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "login.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "macos.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "mail.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "manager.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "media.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "merch.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "metrics.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "mobile.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "monitor.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "mtproto.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "my.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "news.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "panel.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "passport.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "ping.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "pluto.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "pop.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "poseidon.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "premium.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "private.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "protocol.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "report.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "ru.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "sandbox.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "schema.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "security.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "shop.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "smtp.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "ssh.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "staging.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "static.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "stats.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "status.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "store.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "support.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "system.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "t.me",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "tdesktop.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "tdlib.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "teleg.xyz",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.ai",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.asia",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.biz",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.cloud",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.cn",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.co",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.com",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.de",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.dev",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.dog",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.eu",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.fr",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.host",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.in",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.info",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.io",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.jp",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.me",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.net",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.qa",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.ru",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.services",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.solutions",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.space",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.team",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.tech",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.uk",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.us",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.website",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegram.xyz",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telegramapp.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "telesco.pe",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "test.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "testing.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "tg.dev",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "tg.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "tgandroid.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "tgios.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "tgram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "tgraph.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "torg.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "translate.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "translations.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "updates.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "uptime.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "venus.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "verify.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "vesta.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "web.t.me",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "web.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "webk.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "windows.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "zeus.telegram.org",
+      "enabled": true,
+      "note": "zapret"
+    },
+    {
+      "value": "localizeapi.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "chat.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "crixet.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "oaistatic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "oaiusercontent.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "sora.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "openai.com.cdn.cloudflare.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "o33249.ingest.sentry.io",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "browser-intake-datadoghq.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "openaiapi-site.azureedge.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "openaicom-api-bdcpf8c6d2e9atf6.z01.azurefd.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "openaicom.imgix.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "openaicomproductionae4b.blob.core.windows.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "production-openaicom-storage.azureedge.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "api.anthropic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "code.claude.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "console.anthropic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "anthropic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "privacy.anthropic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "api.console.anthropic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "a.claude.ai",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "url8792.mail.anthropic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "mcpservertest.online",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "anthropic.team",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "chatbotclaude.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "api.github.com/copilot_internal/v2",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "api.github.com/copilot_internal/v2/token",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "api.github.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "github.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "*.anthropic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "*.claude.ai",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "api.anthropic.com/v1/messages",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "cloudfront.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "amazonaws.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "events.anthropic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "*.cloudfront.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "*.execute-api.*.amazonaws.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "cognito-idp.*.amazonaws.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "cognito-identity.*.amazonaws.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "api.segment.io",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "cdn.segment.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "cdn-settings.segment.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "vscode-cdn.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "vscode.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "vscode.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "api.github.com/copilot/mcp_registry",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "api.anthropic.com/v1/mcp_servers",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "googleapis.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "*.googleapis.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "googleusercontent.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "*.googleusercontent.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "gstatic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "*.gstatic.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "dns.google",
+      "enabled": false,
+      "note": ""
+    },
+    {
+      "value": "137.66.149.34.bc.googleusercontent.com",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "speedtest.net",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "kick.com",
+      "enabled": false,
+      "note": ""
+    }
+  ],
+  "ips": [
+    {
+      "value": "8.8.8.8",
+      "enabled": false,
+      "note": "Google DNS"
+    },
+    {
+      "value": "91.108.4.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "91.108.8.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "91.108.12.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "91.108.16.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "91.108.20.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "91.108.56.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "91.105.192.0/23",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "149.154.160.0/20",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "149.154.160.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "149.154.164.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "149.154.168.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "149.154.172.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "185.76.151.0/24",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "95.161.64.0/20",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "67.198.55.0/24",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "109.239.140.0/24",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "143.244.32.0/21",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "91.108.56.0/23",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "91.108.12.0/23",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "149.154.160.0/21",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "149.154.164.0/21",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "91.105.192.0/19",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "185.76.151.0/22",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "160.79.104.0/23",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "160.79.104.0/21",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "34.162.46.92/32",
+      "enabled": false,
+      "note": ""
+    },
+    {
+      "value": "34.162.102.82/32",
+      "enabled": false,
+      "note": ""
+    },
+    {
+      "value": "34.162.136.91/32",
+      "enabled": false,
+      "note": ""
+    },
+    {
+      "value": "34.162.142.92/32",
+      "enabled": false,
+      "note": ""
+    },
+    {
+      "value": "34.162.183.95/32",
+      "enabled": false,
+      "note": ""
+    },
+    {
+      "value": "160.79.104.10",
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "value": "34.149.66.137/32",
+      "enabled": false,
+      "note": ""
+    },
+    {
+      "value": "34.0.0.0/8",
+      "enabled": false,
+      "note": ""
+    },
+    {
+      "value": "35.0.0.0/8",
+      "enabled": false,
+      "note": ""
+    },
+    {
+      "value": "8.8.4.4",
+      "enabled": false,
+      "note": ""
+    }
+  ]
+}

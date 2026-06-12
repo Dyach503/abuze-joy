@@ -1,0 +1,17 @@
+debian,ubuntu :
+
+apt install make gcc zlib1g-dev libcap-dev libnetfilter-queue-dev libmnl-dev libsystemd-dev libluajit2-5.1-dev
+make -C /opt/zapret2 systemd
+
+FreeBSD :
+
+pkg install pkgconf
+pkg search luajit-2
+# see what's the version available
+pkg install luajit-2.1.0.20250728
+make -C /opt/zapret2
+
+OpenBSD :
+
+pkg_add luajit gmake
+gmake -C /opt/zapret2 bsd
