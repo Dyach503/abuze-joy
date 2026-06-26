@@ -11,9 +11,9 @@ setup-x86_64.exe --allow-unsupported-windows --no-verify --site http://ctm.crouc
 
 4) install and compile luajit from here : https://github.com/openresty/luajit2
 
-download latest releast, unpack, cd to it's directory
+download latest release, unpack, cd to it's directory
 
-make BUILDMODE=static CFLAGS="-Os"
+make BUILDMODE=static CFLAGS="-Os -DLUAJIT_DISABLE_FFI -ffat-lto-objects -flto=auto -ffunction-sections -fdata-sections -fvisibility=hidden"
 make install
 
 5) cd to %ZAPRET_BASE%/nfq2
@@ -32,5 +32,5 @@ Choose version 2.2.2 for Windows 10 and 2.2.0 for Windows 7.
 8) Copy cygwin1.dll, winws2.exe, windivert.dll and windivert64.sys to one folder.
 
 9) Run winws2.exe from cmd.exe running as administrator.
-winws will not run from cygwin shell with cygwin1.dll copy in it's folder.
-winws will not run without cygwin1.dll outside of cygwin shell.
+winws2 will not run from cygwin shell with cygwin1.dll copy in it's folder.
+winws2 will not run without cygwin1.dll outside of cygwin shell.

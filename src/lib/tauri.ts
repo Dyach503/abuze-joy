@@ -49,18 +49,33 @@ export type ZapretStrategy =
   | "normal"
   | "normal_plus"
   | "normal_discord"
+  | "auto"
   | "builder"
   | "custom";
 
 export interface DesyncAction {
-  method: string; // fake | multisplit | multidisorder | fakedsplit | rst
-  blob: string;
+  method: string; // fake | multisplit | multidisorder | fakedsplit | rst | circular | wssize
+  blob: string; // .bin filename, inline 0xHEX, or built-in (fake_default_*)
   pos: string;
   seqovl: string;
   tcp_ts: string;
   repeats: string;
   pattern: string;
   tls_mod: string;
+  strategy: string; // circular group tag → strategy=N
+  ip_autottl: string; // e.g. -1,3-20
+  tcp_md5: boolean; // bare fooling flag
+  // circular parameters
+  fails: string;
+  maxtime: string;
+  retrans: string;
+  maxseq: string;
+  reset: boolean;
+  udp_out: string;
+  udp_in: string;
+  // wssize parameters
+  wsize: string;
+  scale: string;
 }
 
 export interface ZapretProfile {
@@ -70,6 +85,8 @@ export interface ZapretProfile {
   l7: string[];
   payload: string;
   hostlist_domains: string;
+  in_range: string;
+  out_range: string;
   desyncs: DesyncAction[];
 }
 

@@ -12,6 +12,9 @@
 #include <fcntl.h>
 
 #define UNARY_PLUS(v) (v>0 ? "+" : "")
+//#define	MIN(v1,v2) ((v1)<(v2) ? (v1) : (v2))
+//#define	MAX(v1,v2) ((v1)<(v2) ? (v2) : (v1))
+
 
 // this saves memory. sockaddr_storage is larger than required. it can be 128 bytes. sockaddr_in6 is 28 bytes.
 typedef union
@@ -32,6 +35,10 @@ void replace_char(char *s, char from, char to);
 const char *strncasestr(const char *s,const char *find, size_t slen);
 // [a-zA-z][a-zA-Z0-9]*
 bool is_identifier(const char *p);
+
+ssize_t read_intr(int fd, void *buf, size_t count);
+bool fread_safe(void *ptr, size_t size, size_t nmemb, FILE *F, size_t *rd);
+char* fgets_safe(char *s, int size, FILE *stream);
 
 bool load_file(const char *filename, off_t offset, void *buffer, size_t *buffer_size);
 bool save_file(const char *filename, const void *buffer, size_t buffer_size);
@@ -102,19 +109,23 @@ void set_console_io_buffering(void);
 void close_std(void);
 void close_std_and_exit(int code);
 bool set_env_exedir(const char *argv0);
+bool realpath_any(const char *file, char *pabs);
 
 bool parse_int16(const char *p, int16_t *v);
-
-uint32_t mask_from_bitcount(uint32_t zct);
-void mask_from_bitcount6_prepare(void);
-const struct in6_addr *mask_from_bitcount6(uint32_t zct);
 
 #ifdef CLOCK_BOOTTIME
 #define CLOCK_BOOT_OR_UPTIME CLOCK_BOOTTIME
 #elif defined(CLOCK_UPTIME)
 #define CLOCK_BOOT_OR_UPTIME CLOCK_UPTIME
 #else
-#define CLOCK_BOOT_OR_UPTIME CLOCK_MONOTINIC
+#define CLOCK_BOOT_OR_UPTIME CLOCK_MONOTONIC
 #endif
 
 time_t boottime(void);
+uint64_t boottime_ms(void);
+
+#ifdef __CYGWIN__
+uint32_t mask_from_bitcount(uint32_t zct);
+void mask_from_bitcount6_prepare(void);
+const struct in6_addr *mask_from_bitcount6(uint32_t zct);
+#endif

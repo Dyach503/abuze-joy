@@ -5,33 +5,6 @@
 #include <stdio.h>
 #include <arpa/inet.h>
 
-#define DESTROY_STR_POOL(etype, ppool) \
-	etype *elem, *tmp; \
-	HASH_ITER(hh, *ppool, elem, tmp) { \
-		free(elem->str); \
-		HASH_DEL(*ppool, elem); \
-		free(elem); \
-	}
-
-#define ADD_STR_POOL(etype, ppool, keystr, keystr_len) \
-	etype *elem; \
-	if (!(elem = (etype*)malloc(sizeof(etype)))) \
-		return false; \
-	if (!(elem->str = malloc(keystr_len + 1))) \
-	{ \
-		free(elem); \
-		return false; \
-	} \
-	memcpy(elem->str, keystr, keystr_len); \
-	elem->str[keystr_len] = 0; \
-	oom = false; \
-	HASH_ADD_KEYPTR(hh, *ppool, elem->str, keystr_len, elem); \
-	if (oom) \
-	{ \
-		free(elem->str); \
-		free(elem); \
-		return false; \
-	}
 #define ADD_HOSTLIST_POOL(etype, ppool, keystr, keystr_len, flg) \
 	etype *elem_find; \
 	HASH_FIND(hh, *ppool, keystr, keystr_len, elem_find); \
@@ -493,7 +466,6 @@ void kavl_bit_destroy(struct kavl_bit_elem **hdr)
 		if (!e)	break;
 		kavl_bit_destroy_elem(e);
 	}
-	free(*hdr);
 }
 struct kavl_bit_elem *kavl_bit_add(struct kavl_bit_elem **hdr, void *data, unsigned int bitlen, size_t struct_size)
 {
@@ -1033,7 +1005,7 @@ static ip_cache4 *ipcache4Add(ip_cache4 **ipcache, const struct in_addr *a, cons
 }
 static void ipcache4Print(ip_cache4 *ipcache)
 {
-	char s_ip[16];
+	char s_ip[INET_ADDRSTRLEN];
 	time_t now;
 	ip_cache4 *ipc, *tmp;
 
@@ -1091,7 +1063,7 @@ static ip_cache6 *ipcache6Add(ip_cache6 **ipcache, const struct in6_addr *a, con
 }
 static void ipcache6Print(ip_cache6 *ipcache)
 {
-	char s_ip[40];
+	char s_ip[INET6_ADDRSTRLEN];
 	time_t now;
 	ip_cache6 *ipc, *tmp;
 

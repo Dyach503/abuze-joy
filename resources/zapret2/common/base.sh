@@ -426,14 +426,6 @@ alloc_num()
 	eval $1="$v"
 }
 
-std_ports()
-{
-	NFQWS2_PORTS_TCP_IPT=$(replace_char - : $NFQWS2_PORTS_TCP)
-	NFQWS2_PORTS_TCP_KEEPALIVE_IPT=$(replace_char - : $NFQWS2_PORTS_TCP_KEEPALIVE)
-	NFQWS2_PORTS_UDP_IPT=$(replace_char - : $NFQWS2_PORTS_UDP)
-	NFQWS2_PORTS_UDP_KEEPALIVE_IPT=$(replace_char - : $NFQWS2_PORTS_UDP_KEEPALIVE)
-}
-
 has_bad_ws_options()
 {
 	# $1 - nfqws2 opts
@@ -444,6 +436,13 @@ has_bad_ws_options()
 		echo "It's OK if you only specialize already redirected traffic and also process the rest."
 		echo "If you redirect port X to process several IPs from the list and do nothing with the rest - IT'S VERY INEFFECTIVE !"
 		echo "Kernel ipsets should be used instead. Write custom scripts and filter IPs in kernel."
+		echo
+	}
+	contains "$1" "--ipset=$ZAPRET_BASE" || contains "$1" "--ipset-exclude=$ZAPRET_BASE" ||
+	contains "$1" "--hostlist=$ZAPRET_BASE" || contains "$1" "--hostlist-exclude=$ZAPRET_BASE" && {
+		echo
+		echo "WARNING !!! you store ipset or hostlist files inside '$ZAPRET_BASE'"
+		echo "It's not recommended. install_easy.sh will delete them during update."
 		echo
 	}
 	

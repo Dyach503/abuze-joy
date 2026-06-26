@@ -523,6 +523,7 @@ pub async fn run_zapret_autotest(
         DpiStrategy::Normal,
         DpiStrategy::NormalPlus,
         DpiStrategy::NormalDiscord,
+        DpiStrategy::Auto,
     ];
 
     let mut results = Vec::new();

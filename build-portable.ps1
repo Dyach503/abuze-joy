@@ -18,13 +18,14 @@ npm run tauri build -- --no-bundle
 if ($LASTEXITCODE -ne 0) { throw "tauri build failed" }
 
 Write-Host "[4/4] Assembling portable folder..." -ForegroundColor Cyan
-$exe = Join-Path $root "src-tauri\target\release\AbuzeJoy.exe"
+# Tauri names the binary after the Cargo package (abuze-joy.exe); we ship it as AbuzeJoy.exe.
+$exe = Join-Path $root "src-tauri\target\release\abuze-joy.exe"
 if (-not (Test-Path $exe)) { throw "Executable not found: $exe" }
 
 if (Test-Path $out) { Remove-Item -Recurse -Force $out }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
-Copy-Item $exe -Destination $out
+Copy-Item $exe -Destination (Join-Path $out "AbuzeJoy.exe")
 Copy-Item (Join-Path $root "resources") -Destination $out -Recurse
 
 Write-Host ""

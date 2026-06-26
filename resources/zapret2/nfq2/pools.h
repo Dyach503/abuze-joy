@@ -27,6 +27,34 @@
 	else \
 		LIST_INSERT_HEAD(head, elm, field); }
 
+#define DESTROY_STR_POOL(etype, ppool) \
+	etype *elem, *tmp; \
+	HASH_ITER(hh, *ppool, elem, tmp) { \
+		free(elem->str); \
+		HASH_DEL(*ppool, elem); \
+		free(elem); \
+	}
+
+#define ADD_STR_POOL(etype, ppool, keystr, keystr_len) \
+	etype *elem; \
+	if (!(elem = (etype*)malloc(sizeof(etype)))) \
+		return false; \
+	if (!(elem->str = malloc(keystr_len + 1))) \
+	{ \
+		free(elem); \
+		return NULL; \
+	} \
+	memcpy(elem->str, keystr, keystr_len); \
+	elem->str[keystr_len] = 0; \
+	oom = false; \
+	HASH_ADD_KEYPTR(hh, *ppool, elem->str, keystr_len, elem); \
+	if (oom) \
+	{ \
+		free(elem->str); \
+		free(elem); \
+		return NULL; \
+	}
+
 
 typedef struct hostlist_pool {
 	char *str;		/* key */

@@ -184,12 +184,21 @@ impl ZapretManager {
             path.to_string_lossy().replace('\\', "/")
         }
 
-        // Build command arguments
+        // Build command arguments.
+        // Capture both directions: the `circular` orchestrator (Auto strategy / builder
+        // profiles using circular) requires inbound traffic to cache RST/HTTP replies for
+        // its failure detector, and `--in-range` filters only work on captured inbound.
         let mut args = vec![
             format!("--wf-tcp-out={}", config.tcp_ports),
             format!("--wf-udp-out={}", config.udp_ports),
+            format!("--wf-tcp-in={}", config.tcp_ports),
+            format!("--wf-udp-in={}", config.udp_ports),
         ];
 
+        // The injected hostlist/ipset attaches to the first profile in winws2 (the TLS/TCP
+        // 443 profile), gating its desync to listed domains/IPs only. This keeps zapret
+        // selective and — importantly — leaves the VPN server's own connection (not in the
+        // list) untouched, so zapret can run alongside the VPN without breaking the tunnel.
         if !domains.is_empty() {
             args.push(format!("--hostlist={}", path_to_string(&domains_file)));
         }

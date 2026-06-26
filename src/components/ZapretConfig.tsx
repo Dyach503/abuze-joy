@@ -9,68 +9,97 @@ import {
   type AutotestResult,
 } from "../lib/tauri";
 import { useI18n } from "../i18n";
-import StrategyBuilder, { newProfile } from "./StrategyBuilder";
+import StrategyBuilder, { newProfile, newDesync } from "./StrategyBuilder";
 
-// Starting-point profiles for the "Load from preset" button in the builder.
+// Starting-point profiles for the "Load basic preset" button in the builder.
 const PRESET_TEMPLATES: ZapretProfile[] = [
   {
+    ...newProfile(),
     name: "TCP 443 TLS",
     l4: "tcp",
     ports: "443",
     l7: ["tls"],
     payload: "tls_client_hello",
-    hostlist_domains: "",
     desyncs: [
-      {
-        method: "fake",
-        blob: "tls_clienthello_gosuslugi_ru.bin",
-        pos: "",
-        seqovl: "",
-        tcp_ts: "-10000",
-        repeats: "6",
-        pattern: "",
-        tls_mod: "",
-      },
-      {
-        method: "multisplit",
-        blob: "",
-        pos: "10",
-        seqovl: "652",
-        tcp_ts: "",
-        repeats: "",
-        pattern: "",
-        tls_mod: "",
-      },
-      {
-        method: "fakedsplit",
-        blob: "",
-        pos: "",
-        seqovl: "",
-        tcp_ts: "-600000",
-        repeats: "",
-        pattern: "0x00",
-        tls_mod: "",
-      },
+      { ...newDesync(), method: "fake", blob: "tls_clienthello_gosuslugi_ru.bin", tcp_ts: "-10000", repeats: "6" },
+      { ...newDesync(), method: "multisplit", pos: "10", seqovl: "652" },
+      { ...newDesync(), method: "fakedsplit", tcp_ts: "-600000", pattern: "0x00" },
     ],
   },
   {
+    ...newProfile(),
     name: "QUIC UDP 443",
     l4: "udp",
     ports: "443",
     l7: ["quic"],
     payload: "quic_initial",
-    hostlist_domains: "",
     desyncs: [
-      {
-        method: "fake",
-        blob: "quic_initial_www_google_com.bin",
-        pos: "",
-        seqovl: "",
-        tcp_ts: "-10000",
-        repeats: "6",
-        pattern: "",
-        tls_mod: "",
-      },
+      { ...newDesync(), method: "fake", blob: "quic_initial_www_google_com.bin", tcp_ts: "-10000", repeats: "6" },
+    ],
+  },
+];
+
+// Editable builder equivalent of the hardcoded "Auto" strategy (circular auto-rotation).
+// Loaded via the "Load auto (circular) preset" button.
+const AUTO_TEMPLATE: ZapretProfile[] = [
+  {
+    ...newProfile(),
+    name: "TLS circular",
+    l4: "tcp",
+    ports: "443",
+    l7: ["tls"],
+    payload: "tls_client_hello",
+    in_range: "-s4096",
+    out_range: "-d10",
+    desyncs: [
+      { ...newDesync(), method: "circular", fails: "2", maxtime: "30", retrans: "2", maxseq: "16384", reset: true },
+      { ...newDesync(), method: "wssize", wsize: "1", scale: "6" },
+      { ...newDesync(), method: "multidisorder", pos: "1,midsld", strategy: "1" },
+      { ...newDesync(), method: "wssize", wsize: "1", scale: "6" },
+      { ...newDesync(), method: "multidisorder", pos: "1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1", strategy: "2" },
+      { ...newDesync(), method: "wssize", wsize: "1", scale: "6" },
+      { ...newDesync(), method: "multisplit", pos: "10", seqovl: "1", strategy: "3" },
+    ],
+  },
+  {
+    ...newProfile(),
+    name: "QUIC circular",
+    l4: "udp",
+    ports: "443",
+    l7: ["quic"],
+    payload: "quic_initial",
+    in_range: "-d10",
+    out_range: "-d10",
+    desyncs: [
+      { ...newDesync(), method: "circular", fails: "2", maxtime: "30", udp_out: "4", udp_in: "1" },
+      { ...newDesync(), method: "fake", blob: "quic_initial_www_google_com.bin", repeats: "5", strategy: "1" },
+      { ...newDesync(), method: "fake", blob: "fake_default_quic", repeats: "5", strategy: "2" },
+    ],
+  },
+  {
+    ...newProfile(),
+    name: "STUN/Discord",
+    l4: "udp",
+    ports: "50000-65535",
+    l7: ["stun", "discord"],
+    payload: "stun,discord_ip_discovery",
+    out_range: "-d10",
+    desyncs: [
+      { ...newDesync(), method: "fake", blob: "0x00000000000000000000000000000000", repeats: "2" },
+    ],
+  },
+  {
+    ...newProfile(),
+    name: "HTTP 80",
+    l4: "tcp",
+    ports: "80",
+    l7: ["http"],
+    payload: "http_req",
+    in_range: "-d1",
+    out_range: "-d10",
+    desyncs: [
+      { ...newDesync(), method: "fake", blob: "fake_default_http", ip_autottl: "-1,3-20", tcp_md5: true },
+      { ...newDesync(), method: "fakedsplit", ip_autottl: "-1,3-20", tcp_md5: true },
     ],
   },
 ];
@@ -79,6 +108,7 @@ const STRATEGY_MAP: Record<string, ZapretConfig["strategy"]> = {
   Normal: "normal",
   NormalPlus: "normal_plus",
   NormalDiscord: "normal_discord",
+  Auto: "auto",
 };
 
 export default function ZapretConfigComponent() {
@@ -203,6 +233,7 @@ export default function ZapretConfigComponent() {
           <option value="normal">{t("zconf.strategy.normal")}</option>
           <option value="normal_plus">{t("zconf.strategy.normalPlus")}</option>
           <option value="normal_discord">{t("zconf.strategy.normalDiscord")}</option>
+          <option value="auto">{t("zconf.strategy.auto")}</option>
           <option value="builder">{t("zconf.strategy.builder")}</option>
           <option value="custom">{t("zconf.strategy.custom")}</option>
         </select>
@@ -247,7 +278,7 @@ export default function ZapretConfigComponent() {
 
       {config.strategy === "builder" && (
         <>
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
               className="btn btn-secondary"
               onClick={() =>
@@ -255,6 +286,14 @@ export default function ZapretConfigComponent() {
               }
             >
               {t("builder.loadPreset")}
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() =>
+                setConfig({ ...config, profiles: AUTO_TEMPLATE.map((p) => ({ ...p })) })
+              }
+            >
+              {t("builder.loadAutoPreset")}
             </button>
           </div>
           <StrategyBuilder

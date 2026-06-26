@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "helpers.h"
 
 #define ZCHUNK 16384
 #define BUFMIN 128
@@ -14,6 +15,7 @@ int z_readfile(FILE *F, char **buf, size_t *size, size_t extra_alloc)
 	unsigned char in[ZCHUNK];
 	size_t bufsize;
 	void *newbuf;
+	size_t rd;
 
 	memset(&zs, 0, sizeof(zs));
 
@@ -25,20 +27,21 @@ int z_readfile(FILE *F, char **buf, size_t *size, size_t extra_alloc)
 
 	do
 	{
-		zs.avail_in = fread(in, 1, sizeof(in), F);
-		if (ferror(F))
+		if (!fread_safe(in, 1, sizeof(in), F, &rd))
 		{
 			r = Z_ERRNO;
 			goto zerr;
 		}
-		if (!zs.avail_in)
+		if (!rd)
 		{
 			// file is not full
 			r = Z_DATA_ERROR;
 			goto zerr;
 		}
+		zs.avail_in = rd;
 		zs.next_in = in;
-		do
+
+		for(;;)
 		{
 			if ((bufsize - *size) < BUFMIN)
 			{
@@ -53,20 +56,41 @@ int z_readfile(FILE *F, char **buf, size_t *size, size_t extra_alloc)
 			}
 			zs.avail_out = bufsize - *size;
 			zs.next_out = (unsigned char*)(*buf + *size);
+
 			r = inflate(&zs, Z_NO_FLUSH);
-			if (r != Z_OK && r != Z_STREAM_END) goto zerr;
+
 			*size = bufsize - zs.avail_out;
-		} while (r == Z_OK && zs.avail_in);
+			if (r==Z_STREAM_END) break;
+			if (r==Z_BUF_ERROR)
+			{
+				if (zs.avail_in)
+					goto zerr;
+				else
+				{
+					r = Z_OK;
+					break;
+				}
+			}
+			if (r!=Z_OK) goto zerr;
+		}
 	} while (r == Z_OK);
 
 	if (*size < bufsize)
 	{
-		// free extra space
-		if ((newbuf = realloc(*buf, *size + extra_alloc))) *buf = newbuf;
+		if (*size + extra_alloc)
+		{
+			// free extra space
+			if ((newbuf = realloc(*buf, *size + extra_alloc))) *buf = newbuf;
+		}
+		else
+		{
+			free(*buf);
+			*buf = NULL;
+		}
 	}
 
 	inflateEnd(&zs);
-	return Z_OK;
+	return r;
 
 zerr:
 	inflateEnd(&zs);

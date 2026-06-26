@@ -11,6 +11,7 @@
 #include "ipset.h"
 #include "gzip.h"
 #include "pools.h"
+#include "timer.h"
 #include "lua.h"
 #include "crypto/aes.h"
 
@@ -43,6 +44,7 @@
 #endif
 
 #ifdef __linux__
+#include <sys/ioctl.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
 #define NF_DROP 0
 #define NF_ACCEPT 1
@@ -56,6 +58,7 @@ volatile sig_atomic_t bQuit = false;
 
 static void onhup(int sig)
 {
+	// async safe
 	if (bQuit) return;
 
 	const char *msg = "HUP received ! Lists will be reloaded.\n";
@@ -70,13 +73,13 @@ static void ReloadCheck()
 		if (!LoadAllHostLists())
 		{
 			DLOG_ERR("hostlists load failed. this is fatal.\n");
-			exit(1);
+			exit(200);
 		}
 		ResetAllIpsetModTime();
 		if (!LoadAllIpsets())
 		{
 			DLOG_ERR("ipset load failed. this is fatal.\n");
-			exit(1);
+			exit(200);
 		}
 		bReload = false;
 	}
@@ -84,6 +87,7 @@ static void ReloadCheck()
 
 static void onusr1(int sig)
 {
+	// this is debug-only signal. no async safety
 	if (bQuit) return;
 
 	printf("\nCONNTRACK DUMP\n");
@@ -92,6 +96,7 @@ static void onusr1(int sig)
 }
 static void onusr2(int sig)
 {
+	// this is debug-only signal. no async safety
 	if (bQuit) return;
 
 	printf("\nHOSTFAIL POOL DUMP\n");
@@ -108,6 +113,7 @@ static void onusr2(int sig)
 }
 static void onint(int sig)
 {
+	// theoretically lua_sethook is not async-safe. but it's one-time signal
 	if (bQuit) return;
 	const char *msg = "INT received !\n";
 	size_t wr = write(1, msg, strlen(msg));
@@ -116,6 +122,7 @@ static void onint(int sig)
 }
 static void onterm(int sig)
 {
+	// theoretically lua_sethook is not async-safe. but it's one-time signal
 	if (bQuit) return;
 	const char *msg = "TERM received !\n";
 	size_t wr = write(1, msg, strlen(msg));
@@ -178,7 +185,7 @@ static void fuzzPacketData(unsigned int count)
 			*packet = *packet ? (*packet & 1) ? 0x40 : 0x60 | (*packet & 0x0F) : (uint8_t)random();
 		}
 		modlen = random()%(sizeof(mod)+1);
-		verdict = processPacketData(&mark,random()%1 ? "ifin" : NULL,random()%1 ? "ifout" : NULL,packet,len,mod,&modlen);
+		verdict = processPacketData(&mark,(random() & 1) ? "ifin" : NULL,(random() & 1) ? "ifout" : NULL,packet,len,mod,&modlen);
 		free(packet);
 	}
 }
@@ -233,50 +240,95 @@ static int write_pidfile(FILE **Fpid)
 	return true;
 }
 
+void NoInterceptLoop(void)
+{
+	uint64_t bt, bt_next, bt_delta;
+	struct timespec ts;
+
+	if (params.timers)
+	{
+		DLOG("processing timers\n");
+
+		bt_next = TimerPoolNext(params.timers, &params.timers_dirty);
+		while(params.timers)
+		{
+			if (bQuit) goto quit;
+			bt = boottime_ms();
+			if (bt_next>bt)
+			{
+				bt_delta = bt_next - bt;
+				ts.tv_sec = (time_t)(bt_delta/1000U);
+				ts.tv_nsec = bt_delta%1000U*1000000U;
+				nanosleep(&ts,NULL);
+				if (bQuit) goto quit;
+			}
+			ReloadCheck();
+			lua_do_gc();
+			bt_next = TimerPoolRun(&params.timers, &params.timers_dirty, 0);
+		}
+	}
+	return;
+quit:
+	DLOG_CONDUP("quit requested\n");
+}
+
 
 #ifdef __linux__
+
+struct nfq_cb_data
+{
+	uint8_t *mod;
+	int sock;
+};
+
+// cookie must point to mod buffer with size RECONSTRUCT_MAX_SIZE
 static int nfq_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *cookie)
 {
 	int id, ilen;
 	size_t len;
 	struct nfqnl_msg_packet_hdr *ph;
 	uint8_t *data;
-	uint32_t ifidx_out, ifidx_in;
-	char ifout[IFNAMSIZ], ifin[IFNAMSIZ];
 	size_t modlen;
+	struct nfq_cb_data *cbdata = (struct nfq_cb_data*)cookie;
 	uint32_t mark;
-	uint8_t mod[RECONSTRUCT_MAX_SIZE] __attribute__((aligned(16)));
+	struct ifreq ifr_in, ifr_out;
 
-	ph = nfq_get_msg_packet_hdr(nfa);
-	id = ph ? ntohl(ph->packet_id) : 0;
+	if (!(ph = nfq_get_msg_packet_hdr(nfa))) return 0; // should not happen
+	id = ntohl(ph->packet_id);
 
 	mark = nfq_get_nfmark(nfa);
 	ilen = nfq_get_payload(nfa, &data);
 
-	ifidx_out = nfq_get_outdev(nfa);
-	*ifout = 0;
-	if (ifidx_out) if_indextoname(ifidx_out, ifout);
+	// if_indextoname creates socket, calls ioctl, closes socket
+	// code below prevents socket() and close() syscalls on every packet
+	// this saves CPU 5-10 times
 
-	ifidx_in = nfq_get_indev(nfa);
-	*ifin = 0;
-	if (ifidx_in) if_indextoname(ifidx_in, ifin);
+	*ifr_out.ifr_name = 0;
+	ifr_out.ifr_ifindex = nfq_get_outdev(nfa);
+	if (ifr_out.ifr_ifindex && ioctl(cbdata->sock, SIOCGIFNAME, &ifr_out)<0)
+		DLOG_PERROR("ioctl(SIOCGIFNAME)");
 
-	DLOG("\npacket: id=%d len=%d mark=%08X ifin=%s(%u) ifout=%s(%u)\n", id, ilen, mark, ifin, ifidx_in, ifout, ifidx_out);
+	*ifr_in.ifr_name = 0;
+	ifr_in.ifr_ifindex = nfq_get_indev(nfa);
+	if (ifr_in.ifr_ifindex && ioctl(cbdata->sock, SIOCGIFNAME, &ifr_in)<0)
+		DLOG_PERROR("ioctl(SIOCGIFNAME)");
+
+	DLOG("\npacket: id=%d len=%d mark=%08X ifin=%s(%u) ifout=%s(%u)\n", id, ilen, mark, ifr_in.ifr_name, ifr_in.ifr_ifindex, ifr_out.ifr_name, ifr_out.ifr_ifindex);
 
 	if (ilen >= 0)
 	{
 		len = ilen;
-		modlen = sizeof(mod);
+		modlen = RECONSTRUCT_MAX_SIZE;
 		// there's no space to grow packet in recv blob from nfqueue. it can contain multiple packets with no extra buffer length for modifications.
 		// to support increased sizes use separate mod buffer
 		// this is not a problem because only LUA code can trigger VERDICT_MODIFY (and postnat workaround too, once a connection if first packet is dropped)
 		// in case of VERIDCT_MODIFY packet is always reconstructed from dissect, so no difference where to save the data => no performance loss
-		uint8_t verdict = processPacketData(&mark, ifin, ifout, data, len, mod, &modlen);
+		uint8_t verdict = processPacketData(&mark, ifr_in.ifr_name, ifr_out.ifr_name, data, len, cbdata->mod, &modlen);
 		switch (verdict & VERDICT_MASK)
 		{
 		case VERDICT_MODIFY:
 			DLOG("packet: id=%d pass modified. len %zu => %zu\n", id, len, modlen);
-			return nfq_set_verdict2(qh, id, NF_ACCEPT, mark, (uint32_t)modlen, mod);
+			return nfq_set_verdict2(qh, id, NF_ACCEPT, mark, (uint32_t)modlen, cbdata->mod);
 		case VERDICT_DROP:
 			DLOG("packet: id=%d drop\n", id);
 			return nfq_set_verdict2(qh, id, NF_DROP, mark, 0, NULL);
@@ -300,7 +352,7 @@ static void nfq_deinit(struct nfq_handle **h, struct nfq_q_handle **qh)
 		*h = NULL;
 	}
 }
-static bool nfq_init(struct nfq_handle **h, struct nfq_q_handle **qh)
+static bool nfq_init(struct nfq_handle **h, struct nfq_q_handle **qh, struct nfq_cb_data *cbdata)
 {
 	nfq_deinit(h, qh);
 
@@ -311,26 +363,33 @@ static bool nfq_init(struct nfq_handle **h, struct nfq_q_handle **qh)
 		goto exiterr;
 	}
 
+	// linux 3.8 - bind calls are NOOP.  linux 3.8- - secondary bind to AF_INET6 will fail
+	// old kernels seem to require both binds to ipv4 and ipv6. may not work without unbind
+
 	DLOG_CONDUP("unbinding existing nf_queue handler for AF_INET (if any)\n");
 	if (nfq_unbind_pf(*h, AF_INET) < 0) {
-		DLOG_PERROR("nfq_unbind_pf()");
+		DLOG_PERROR("nfq_unbind_pf(AF_INET)");
 		goto exiterr;
 	}
 
 	DLOG_CONDUP("binding nfnetlink_queue as nf_queue handler for AF_INET\n");
 	if (nfq_bind_pf(*h, AF_INET) < 0) {
-		DLOG_PERROR("nfq_bind_pf()");
+		DLOG_PERROR("nfq_bind_pf(AF_INET)");
 		goto exiterr;
+	}
+
+	DLOG_CONDUP("unbinding existing nf_queue handler for AF_INET6 (if any)\n");
+	if (nfq_unbind_pf(*h, AF_INET6) < 0) {
+		DLOG_PERROR("nfq_unbind_pf(AF_INET6)");
 	}
 
 	DLOG_CONDUP("binding nfnetlink_queue as nf_queue handler for AF_INET6\n");
 	if (nfq_bind_pf(*h, AF_INET6) < 0) {
-		DLOG_PERROR("nfq_bind_pf()");
-		// do not fail - kernel may not support ipv6
+		DLOG_PERROR("nfq_bind_pf(AF_INET6)");
 	}
 
 	DLOG_CONDUP("binding this socket to queue '%u'\n", params.qnum);
-	*qh = nfq_create_queue(*h, params.qnum, &nfq_cb, &params);
+	*qh = nfq_create_queue(*h, params.qnum, &nfq_cb, cbdata);
 	if (!*qh) {
 		DLOG_PERROR("nfq_create_queue()");
 		goto exiterr;
@@ -349,8 +408,14 @@ static bool nfq_init(struct nfq_handle **h, struct nfq_q_handle **qh)
 	if (nfq_set_queue_flags(*qh, NFQA_CFG_F_FAIL_OPEN, NFQA_CFG_F_FAIL_OPEN))
 	{
 		DLOG_ERR("can't set queue flags. its OK on linux <3.6\n");
-		// dot not fail. not supported on old linuxes <3.6 
+		// dot not fail. not supported in old linuxes <3.6 
 	}
+
+	unsigned int rcvbuf = nfnl_rcvbufsiz(nfq_nfnlh(*h), Q_RCVBUF) / 2;
+	if (rcvbuf==Q_RCVBUF)
+		DLOG("set receive buffer size to %u\n", rcvbuf);
+	else
+		DLOG_CONDUP("could not set receive buffer size to %u. real size is %u\n", Q_RCVBUF, rcvbuf);
 
 	int yes = 1, fd = nfq_fd(*h);
 
@@ -374,6 +439,8 @@ static void notify_ready(void)
 #endif
 }
 
+// extra space for netlink headers
+#define NFQ_MAX_RECV_SIZE (RECONSTRUCT_MAX_SIZE+4096)
 static int nfq_main(void)
 {
 	struct nfq_handle *h = NULL;
@@ -381,7 +448,11 @@ static int nfq_main(void)
 	int res, fd, e;
 	ssize_t rd;
 	FILE *Fpid = NULL;
-	uint8_t buf[RECONSTRUCT_MAX_SIZE] __attribute__((aligned(16)));
+	uint8_t *buf=NULL, *mod=NULL;
+	struct nfq_cb_data cbdata = { .sock = -1, .mod = NULL };
+	fd_set fdset;
+	struct timeval tv;
+	uint64_t bt,dbt,bt_next;
 
 	if (*params.pidfile && !(Fpid = fopen(params.pidfile, "w")))
 	{
@@ -419,11 +490,24 @@ static int nfq_main(void)
 
 	if (!params.intercept)
 	{
+		NoInterceptLoop();
 		DLOG_CONDUP("no intercept quit\n");
 		goto exok;
 	}
 
-	if (!nfq_init(&h, &qh))
+	if (!(buf = malloc(NFQ_MAX_RECV_SIZE)) || !(cbdata.mod = malloc(RECONSTRUCT_MAX_SIZE)))
+	{
+		DLOG_ERR("out of memory\n");
+		goto err;
+	}
+
+	if ((cbdata.sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+	{
+		DLOG_PERROR("socket");
+		goto err;
+	}
+
+	if (!nfq_init(&h, &qh, &cbdata))
 		goto err;
 
 #ifdef HAS_FILTER_SSID
@@ -444,34 +528,68 @@ static int nfq_main(void)
 	notify_ready();
 
 	fd = nfq_fd(h);
+	bt_next = bt = 0;
 	do
 	{
-		while ((rd = recv(fd, buf, sizeof(buf), 0)) >= 0)
+		if (bQuit) goto quit;
+		for(;;)
 		{
-			if (bQuit) goto quit;
-			ReloadCheck();
-			lua_do_gc();
-#ifdef HAS_FILTER_SSID
-			if (params.filter_ssid_present)
-				if (!wlan_info_get_rate_limited())
-					DLOG_ERR("cannot get wlan info\n");
-#endif
-			if (rd)
+			if (params.timers)
 			{
-				int r = nfq_handle_packet(h, (char *)buf, (int)rd);
-				if (r) DLOG_ERR("nfq_handle_packet error %d\n", r);
+				if (!bt_next) bt_next = TimerPoolNext(params.timers, &params.timers_dirty);
+				bt = boottime_ms();
+				dbt = bt_next>bt ? bt_next-bt : 0;
+				tv.tv_sec = (time_t)(dbt/1000);
+				tv.tv_usec = (suseconds_t)(dbt%1000*1000);
+
+				FD_ZERO(&fdset);
+				FD_SET(fd, &fdset);
+				res = select(fd+1, &fdset, NULL, NULL, &tv);
+				if (bQuit) goto quit;
+				if (res == -1)
+				{
+					if (errno == EINTR) continue;
+					DLOG_PERROR("select");
+					goto err;
+				}
 			}
 			else
 			{
-				DLOG_ERR("recv from nfq returned 0 !\n");
-				goto err;
+				bt_next = bt = 0;
+				if (bQuit) goto quit;
+				res = 1;
+			}
+			lua_do_gc();
+			ReloadCheck();
+			if (res)
+			{
+				rd = recv(fd, buf, NFQ_MAX_RECV_SIZE, 0);
+				if (rd<0) break;
+				if (!rd)
+				{
+					DLOG_ERR("recv from nfq returned 0 !\n");
+					goto err;
+				}
+#ifdef HAS_FILTER_SSID
+				if (params.filter_ssid_present)
+					if (!wlan_info_get_rate_limited())
+						DLOG_ERR("cannot get wlan info\n");
+#endif
+				res = nfq_handle_packet(h, (char *)buf, (int)rd);
+				if (res<0) DLOG_ERR("nfq_handle_packet result %d, errno %d : %s\n", res, errno, strerror(errno));
+			}
+
+			if (params.timers)
+			{
+				bt = boottime_ms();
+				if (bt>=bt_next)
+					bt_next = TimerPoolRun(&params.timers, &params.timers_dirty, bt);
+				else if (params.timers_dirty)
+					bt_next = 0;
 			}
 		}
 		if (errno==EINTR)
-		{
-			if (bQuit) goto quit;
 			continue;
-		}
 		e = errno;
 		DLOG_ERR("recv: recv=%zd errno %d\n", rd, e);
 		errno = e;
@@ -479,23 +597,26 @@ static int nfq_main(void)
 		// do not fail on ENOBUFS
 	} while (e == ENOBUFS);
 
+err:
+	res=1;
+	goto ex;
+
+quit:
+	DLOG_CONDUP("quit requested\n");
 exok:
 	res=0;
 ex:
+	if (Fpid) fclose(Fpid);
+	free(cbdata.mod);
+	free(buf);
 	nfq_deinit(&h, &qh);
+	if (cbdata.sock>=0) close(cbdata.sock);
 	lua_shutdown();
 #ifdef HAS_FILTER_SSID
 	wlan_info_deinit();
 #endif
 	rawsend_cleanup();
 	return res;
-err:
-	if (Fpid) fclose(Fpid);
-	res=1;
-	goto ex;
-quit:
-	DLOG_CONDUP("quit requested\n");
-	goto exok;
 }
 
 #elif defined(BSD)
@@ -508,11 +629,13 @@ static int dvt_main(void)
 	unsigned int id = 0;
 	socklen_t socklen;
 	ssize_t rd, wr;
-	fd_set fdset;
 	FILE *Fpid = NULL;
 	struct sockaddr_in bp4;
 	struct sockaddr_in6 bp6;
 	uint8_t buf[RECONSTRUCT_MAX_SIZE] __attribute__((aligned));
+	fd_set fdset;
+	struct timeval tv;
+	uint64_t bt,bt_next,dbt;
 
 	if (*params.pidfile && !(Fpid = fopen(params.pidfile, "w")))
 	{
@@ -588,6 +711,7 @@ static int dvt_main(void)
 
 	if (!params.intercept)
 	{
+		NoInterceptLoop();
 		DLOG("no intercept quit\n");
 		goto exitok;
 	}
@@ -595,11 +719,29 @@ static int dvt_main(void)
 	if (params.daemon) daemonize();
 	if (!write_pidfile(&Fpid)) goto exiterr;
 
-	for (;;)
+	for (bt=bt_next=0;;)
 	{
+		if (bQuit)
+		{
+			DLOG_CONDUP("quit requested\n");
+			goto exitok;
+		}
+
 		FD_ZERO(&fdset);
 		for (i = 0; i < fdct; i++) FD_SET(fd[i], &fdset);
-		r = select(fdmax, &fdset, NULL, NULL, NULL);
+
+		if (params.timers)
+		{
+			if (!bt_next) bt_next = TimerPoolNext(params.timers, &params.timers_dirty);
+			bt = boottime_ms();
+			dbt = bt_next>bt ? bt_next-bt : 0;
+			tv.tv_sec = (time_t)(dbt/1000);
+			tv.tv_usec = (suseconds_t)(dbt%1000*1000);
+			r = select(fdmax, &fdset, NULL, NULL, &tv);
+		}
+		else
+			r = select(fdmax, &fdset, NULL, NULL, NULL);
+
 		if (bQuit)
 		{
 			DLOG_CONDUP("quit requested\n");
@@ -611,15 +753,18 @@ static int dvt_main(void)
 			DLOG_PERROR("select");
 			goto exiterr;
 		}
+		ReloadCheck();
+		lua_do_gc();
 		for (i = 0; i < fdct; i++)
 		{
 			if (FD_ISSET(fd[i], &fdset))
 			{
 				socklen = sizeof(sa_from);
-				rd = recvfrom(fd[i], buf, sizeof(buf), 0, (struct sockaddr*)&sa_from, &socklen);
+				while ((rd = recvfrom(fd[i], buf, sizeof(buf), 0, (struct sockaddr*)&sa_from, &socklen))<0 && errno==EINTR);
 				if (rd < 0)
 				{
 					DLOG_PERROR("recvfrom");
+					if (errno==ENOBUFS) continue;
 					goto exiterr;
 				}
 				else if (rd > 0)
@@ -628,9 +773,6 @@ static int dvt_main(void)
 					uint8_t verdict;
 					size_t modlen, len = rd;
 					const char *ifin, *ifout;
-
-					ReloadCheck();
-					lua_do_gc();
 
 					// in any BSD addr of incoming packet is set to the first addr of the interface. addr of outgoing packet is set to zero
 					bool bIncoming = sa_has_addr((struct sockaddr*)&sa_from);
@@ -683,6 +825,14 @@ static int dvt_main(void)
 				}
 			}
 		}
+		if (params.timers)
+		{
+			bt = boottime_ms();
+			if (bt>=bt_next)
+				bt_next = TimerPoolRun(&params.timers, &params.timers_dirty, bt);
+			else if (params.timers_dirty)
+				bt_next = 0;
+		}
 	}
 
 exitok:
@@ -703,7 +853,7 @@ exiterr:
 // do not make it less than 65536 - loopback packets can be up to 64K
 #define WINDIVERT_PACKET_BUF_SIZE	196608 // 3*64K, 128*1500=192000
 
-static int win_main()
+static int win_main(void)
 {
 	size_t len, packet_len, left, modlen;
 	unsigned int id;
@@ -715,6 +865,7 @@ static int win_main()
 	WINDIVERT_ADDRESS wa[WINDIVERT_BULK_MAX];
 	uint8_t *packets = NULL, *packet, *mod=NULL;
 	unsigned int n,wa_count;
+	uint64_t bt_next;
 
 	// windows emulated fork logic does not cover objects outside of cygwin world. have to daemonize before inits
 	if (params.daemon) daemonize();
@@ -779,15 +930,17 @@ static int win_main()
 
 		if (!params.intercept)
 		{
+			NoInterceptLoop();
 			DLOG("no intercept quit\n");
 			goto ex;
 		}
 
+		bt_next = 0;
 		for (id = 0;;)
 		{
 			len = WINDIVERT_PACKET_BUF_SIZE;
 			wa_count = WINDIVERT_BULK_MAX;
-			if (!windivert_recv(packets, &len, wa, &wa_count))
+			if (!windivert_recv(packets, &len, wa, &wa_count, &bt_next))
 			{
 				if (errno == ENOBUFS)
 				{
@@ -1065,12 +1218,9 @@ static bool parse_uid(char *opt, uid_t *uid, gid_t *gid, int *gid_count, int max
 			c = *e;
 			*e = 0;
 		}
-		if (p)
-		{
-			if (sscanf(p, "%u", &u) != 1) return false;
-			if (*gid_count >= max_gids) return false;
-			gid[(*gid_count)++] = (gid_t)u;
-		}
+		if (sscanf(p, "%u", &u) != 1) return false;
+		if (*gid_count >= max_gids) return false;
+		gid[(*gid_count)++] = (gid_t)u;
 		if (e) *e++ = c;
 		p = e;
 	}
@@ -1234,7 +1384,7 @@ struct func_list *parse_lua_call(char *opt, struct func_list_head *flist)
 	struct func_list *f = NULL;
 
 	if (!(name = item_name(&opt)))
-		return false;
+		return NULL;
 
 	if (!is_identifier(name) || !(f=funclist_add_tail(flist,name)))
 		goto err;
@@ -1649,7 +1799,7 @@ static void exithelp(void)
 	*all_protos=0;
 	for (t_l7proto pr=0 ; pr<L7_LAST; pr++)
 	{
-		if (pr) strncat(all_protos, " ", sizeof(all_protos)-1-1);
+		if (pr) strncat(all_protos, " ", sizeof(all_protos)-strlen(all_protos)-1);
 		strncat(all_protos, l7proto_str(pr), sizeof(all_protos)-strlen(all_protos)-1);
 	}
 
@@ -1672,6 +1822,7 @@ static void exithelp(void)
 		" --port=<port>\t\t\t\t\t\t; divert port\n"
 #endif
 		" --daemon\t\t\t\t\t\t; daemonize\n"
+		" --chdir[=path]\t\t\t\t\t\t; change current directory. if no path specified use EXEDIR\n"
 		" --pidfile=<filename>\t\t\t\t\t; write pid to file\n"
 #ifndef __CYGWIN__
 		" --user=<username>\t\t\t\t\t; drop root privs\n"
@@ -1717,12 +1868,12 @@ static void exithelp(void)
 		" --nlm-list[=all]\t\t\t\t\t; list Network List Manager (NLM) networks. connected only or all.\n"
 #endif
 		"\nDESYNC ENGINE INIT:\n"
-		" --writeable[=<dir_name>]\t\t\t\t; create writeable dir for LUA scripts and pass it in WRITEABLE env variable (only one dir possible)\n"
+		" --writable[=<dir_name>]\t\t\t\t; create writable dir for LUA scripts and pass it in WRITABLE env variable (only one dir possible)\n"
 		" --blob=<item_name>:[+ofs]@<filename>|0xHEX\t\t; load blob to LUA var <item_name>\n"
 		" --lua-init=@<filename>|<lua_text>\t\t\t; load LUA program from a file or string. if multiple parameters present order of execution is preserved. gzipped files are supported.\n"
 		" --lua-gc=<int>\t\t\t\t\t\t; forced garbage collection every N sec. default %u sec. triggers only when a packet arrives. 0 = disable.\n"
 		"\nMULTI-STRATEGY:\n"
-		" --new[=<name>]\t\t\t\t\t\t\t; begin new profile. optionally set name\n"
+		" --new[=<name>]\t\t\t\t\t\t; begin new profile. optionally set name\n"
 		" --skip\t\t\t\t\t\t\t; do not use this profile\n"
 		" --name=<name>\t\t\t\t\t\t; set profile name\n"
 		" --template[=<name>]\t\t\t\t\t; use this profile as template (must be named or will be useless)\n"
@@ -1835,6 +1986,7 @@ enum opt_indices {
 	IDX_PORT,
 #endif
 	IDX_DAEMON,
+	IDX_CHDIR,
 	IDX_PIDFILE,
 #ifndef __CYGWIN__
 	IDX_USER,
@@ -1853,7 +2005,7 @@ enum opt_indices {
 	IDX_SOCKARG,
 #endif
 
-	IDX_WRITEABLE,
+	IDX_WRITABLE,
 
 	IDX_BLOB,
 	IDX_LUA_INIT,
@@ -1939,6 +2091,7 @@ static const struct option long_options[] = {
 	[IDX_PORT] = {"port", required_argument, 0, 0},
 #endif
 	[IDX_DAEMON] = {"daemon", no_argument, 0, 0},
+	[IDX_CHDIR] = {"chdir", optional_argument, 0, 0},
 	[IDX_PIDFILE] = {"pidfile", required_argument, 0, 0},
 #ifndef __CYGWIN__
 	[IDX_USER] = {"user", required_argument, 0, 0},
@@ -1956,7 +2109,7 @@ static const struct option long_options[] = {
 #elif defined(SO_USER_COOKIE)
 	[IDX_SOCKARG] = {"sockarg", required_argument, 0, 0},
 #endif
-	[IDX_WRITEABLE] = {"writeable", optional_argument, 0, 0},
+	[IDX_WRITABLE] = {"writable", optional_argument, 0, 0},
 	[IDX_BLOB] = {"blob", required_argument, 0, 0},
 	[IDX_LUA_INIT] = {"lua-init", required_argument, 0, 0},
 	[IDX_LUA_GC] = {"lua-gc", required_argument, 0, 0},
@@ -2097,10 +2250,10 @@ int main(int argc, char **argv)
 
 	srandom(time(NULL));
 	aes_init_keygen_tables(); // required for aes
-	mask_from_bitcount6_prepare();
 	set_env_exedir(argv[0]);
 	set_console_io_buffering();
 #ifdef __CYGWIN__
+	mask_from_bitcount6_prepare();
 	memset(hash_wf,0,sizeof(hash_wf));
 	prepare_low_appdata();
 #endif
@@ -2156,8 +2309,11 @@ int main(int argc, char **argv)
 			{
 				if (*optarg == '@')
 				{
-					strncpy(params.debug_logfile, optarg + 1, sizeof(params.debug_logfile));
-					params.debug_logfile[sizeof(params.debug_logfile) - 1] = 0;
+					if (!realpath_any(optarg+1,params.debug_logfile))
+					{
+						DLOG_ERR("bad file '%s'\n",optarg+1);
+						exit_clean(1);
+					}
 					FILE *F = fopen(params.debug_logfile, "wt");
 					if (!F)
 					{
@@ -2244,8 +2400,28 @@ int main(int argc, char **argv)
 		case IDX_DAEMON:
 			params.daemon = true;
 			break;
+		case IDX_CHDIR:
+			{
+				const char *d = optarg ? optarg : getenv("EXEDIR");
+				if (!d)
+				{
+					DLOG_ERR("chdir: directory unknown\n");
+					exit_clean(1);
+				}
+				DLOG("changing dir to '%s'\n",d);
+				if (chdir(d))
+				{
+					DLOG_PERROR("chdir");
+					exit_clean(1);
+				}
+			}
+			break;
 		case IDX_PIDFILE:
-			snprintf(params.pidfile, sizeof(params.pidfile), "%s", optarg);
+			if (!realpath_any(optarg,params.pidfile))
+			{
+				DLOG_ERR("bad file '%s'\n",optarg);
+				exit_clean(1);
+			}
 			break;
 #ifndef __CYGWIN__
 		case IDX_USER:
@@ -2345,15 +2521,18 @@ int main(int argc, char **argv)
 			}
 			break;
 #endif
-		case IDX_WRITEABLE:
-			params.writeable_dir_enable = true;
+		case IDX_WRITABLE:
+			params.writable_dir_enable = true;
 			if (optarg)
 			{
-				strncpy(params.writeable_dir, optarg, sizeof(params.writeable_dir));
-				params.writeable_dir[sizeof(params.writeable_dir) - 1] = 0;
+				if (!realpath_any(optarg, params.writable_dir))
+				{
+					DLOG_ERR("bad file '%s'\n",optarg);
+					exit_clean(1);
+				}
 			}
 			else
-				*params.writeable_dir = 0;
+				*params.writable_dir = 0;
 			break;
 
 		case IDX_BLOB:
@@ -2361,18 +2540,33 @@ int main(int argc, char **argv)
 			break;
 
 		case IDX_LUA_INIT:
-			if (!strlist_add_tail(&params.lua_init_scripts, optarg))
 			{
-				DLOG_ERR("out of memory\n");
-				exit_clean(1);
+				char pabs[PATH_MAX+1], *p=optarg;
+				if (*p=='@')
+				{
+					if (!realpath_any(p+1,pabs+1))
+					{
+						DLOG_ERR("bad file '%s'\n",p+1);
+						exit_clean(1);
+					}
+					*(p=pabs)='@';
+				}
+				if (!strlist_add_tail(&params.lua_init_scripts, p))
+				{
+					DLOG_ERR("out of memory\n");
+					exit_clean(1);
+				}
 			}
 			break;
 		case IDX_LUA_GC:
-			params.lua_gc = atoi(optarg);
-			if (params.lua_gc<0)
 			{
-				DLOG_ERR("lua-gc must be >=0\n");
-				exit_clean(1);
+				int i = atoi(optarg);
+				if (i<0)
+				{
+					DLOG_ERR("lua-gc must be >=0\n");
+					exit_clean(1);
+				}
+				params.lua_gc = i*1000; // in msec
 			}
 			break;
 		case IDX_HOSTLIST:
@@ -2446,7 +2640,7 @@ int main(int argc, char **argv)
 			}
 			break;
 		case IDX_HOSTLIST_AUTO_FAIL_THRESHOLD:
-			dp->hostlist_auto_fail_threshold = (uint8_t)atoi(optarg);
+			dp->hostlist_auto_fail_threshold = atoi(optarg);
 			if (dp->hostlist_auto_fail_threshold < 1 || dp->hostlist_auto_fail_threshold>20)
 			{
 				DLOG_ERR("auto hostlist fail threshold must be within 1..20\n");
@@ -2455,7 +2649,7 @@ int main(int argc, char **argv)
 			dp->b_hostlist_auto_fail_threshold = true;
 			break;
 		case IDX_HOSTLIST_AUTO_FAIL_TIME:
-			dp->hostlist_auto_fail_time = (uint8_t)atoi(optarg);
+			dp->hostlist_auto_fail_time = atoi(optarg);
 			if (dp->hostlist_auto_fail_time < 1)
 			{
 				DLOG_ERR("auto hostlist fail time is not valid\n");
@@ -2464,7 +2658,7 @@ int main(int argc, char **argv)
 			dp->b_hostlist_auto_fail_time = true;
 			break;
 		case IDX_HOSTLIST_AUTO_RETRANS_THRESHOLD:
-			dp->hostlist_auto_retrans_threshold = (uint8_t)atoi(optarg);
+			dp->hostlist_auto_retrans_threshold = atoi(optarg);
 			if (dp->hostlist_auto_retrans_threshold < 2 || dp->hostlist_auto_retrans_threshold>10)
 			{
 				DLOG_ERR("auto hostlist fail threshold must be within 2..10\n");
@@ -2494,15 +2688,18 @@ int main(int argc, char **argv)
 			break;
 		case IDX_HOSTLIST_AUTO_DEBUG:
 		{
-			FILE *F = fopen(optarg, "a+t");
+			if (!realpath_any(optarg,params.hostlist_auto_debuglog))
+			{
+				DLOG_ERR("bad file '%s'\n",optarg);
+				exit_clean(1);
+			}
+			FILE *F = fopen(params.hostlist_auto_debuglog, "a+t");
 			if (!F)
 			{
 				DLOG_ERR("cannot create %s\n", optarg);
 				exit_clean(1);
 			}
 			fclose(F);
-			strncpy(params.hostlist_auto_debuglog, optarg, sizeof(params.hostlist_auto_debuglog));
-			params.hostlist_auto_debuglog[sizeof(params.hostlist_auto_debuglog) - 1] = '\0';
 		}
 		break;
 
@@ -2956,14 +3153,14 @@ int main(int argc, char **argv)
 	DLOG_CONDUP("we have %u user defined desync profile(s) and default low priority profile 0\n", desync_profile_count);
 	DLOG_CONDUP("we have %u user defined desync template(s)\n", desync_template_count);
 
-	if (params.writeable_dir_enable)
+	if (params.writable_dir_enable)
 	{
-		if (!make_writeable_dir())
+		if (!make_writable_dir())
 		{
-			DLOG_ERR("could not make writeable dir for LUA\n");
+			DLOG_ERR("could not make writable dir for LUA\n");
 			exit_clean(1);
 		}
-		DLOG("LUA writeable dir : %s\n", getenv("WRITEABLE"));
+		DLOG("LUA writable dir : %s\n", getenv("WRITABLE"));
 	}
 #ifndef __CYGWIN__
 	if (params.droproot)

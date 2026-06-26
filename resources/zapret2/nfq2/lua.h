@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #ifdef LUAJIT
-#include "luajit.h"
+#include <luajit.h>
 #else
 #include <lua.h>
 #endif

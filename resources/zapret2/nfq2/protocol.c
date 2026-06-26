@@ -17,12 +17,15 @@ static bool FindNLD(const uint8_t *dom, size_t dlen, int level, const uint8_t **
 {
 	int i;
 	const uint8_t *p1,*p2;
+
+	if (level<1) return false;
 	for (i=1,p2=dom+dlen;i<level;i++)
 	{
 		for (p2--; p2>dom && *p2!='.'; p2--);
 		if (p2<=dom) return false;
 	}
 	for (p1=p2-1 ; p1>dom && *p1!='.'; p1--);
+	if (p1<dom) return false;
 	if (*p1=='.') p1++;
 	if (p) *p = p1;
 	if (len) *len = p2-p1;
@@ -142,7 +145,6 @@ bool posmarker_parse(const char *s, struct proto_pos *m)
 			m->pos = 0;
 	}
 	return true;
-	
 }
 bool posmarker_list_parse(const char *s, struct proto_pos *m, int *mct)
 {
@@ -246,7 +248,7 @@ void ResolveMultiPos(const uint8_t *data, size_t sz, t_l7payload l7payload, cons
 }
 
 
-static const char *http_methods[] = { "GET ","POST ","HEAD ","OPTIONS ","PUT ","DELETE ","CONNECT ","TRACE ",NULL };
+static const char *http_methods[] = { "GET ","POST ","HEAD ","OPTIONS ","PUT ","DELETE ","CONNECT ","TRACE ", "PATCH ", NULL };
 static const char *HttpMethod(const uint8_t *data, size_t len)
 {
 	const char **method;
@@ -329,7 +331,7 @@ bool IsHttpReply(const uint8_t *data, size_t len)
 		data[10]>='0' && data[10]<='9' &&
 		data[11]>='0' && data[11]<='9';
 }
-int HttpReplyCode(const uint8_t *data, size_t len)
+int HttpReplyCode(const uint8_t *data)
 {
 	return (data[9]-'0')*100 + (data[10]-'0')*10 + (data[11]-'0');
 }
@@ -368,7 +370,7 @@ bool HttpReplyLooksLikeDPIRedirect(const uint8_t *data, size_t len, const char *
 	
 	if (!host || !*host || !IsHttpReply(data, len)) return false;
 	
-	code = HttpReplyCode(data,len);
+	code = HttpReplyCode(data);
 	
 	if ((code!=302 && code!=307) || !HttpExtractHeader(data,len,"\nLocation:",loc,sizeof(loc))) return false;
 
@@ -548,10 +550,14 @@ bool TLSFindExtLenOffsetInHandshake(const uint8_t *data, size_t len, size_t *off
 	l += data[l] + 1;
 	// CipherSuitesLength
 	if (len < (l + 2)) return false;
-	l += (data[0]==0x02 ? 0 : pntoh16(data + l)) + 2;
+	if (data[0]==0x01) // client hello ?
+		l += pntoh16(data + l);
+	l+=2;
 	// CompressionMethodsLength
 	if (len < (l + 1)) return false;
-	l += data[l] + 1;
+	if (data[0]==0x01) // client hello ?
+		l += data[l];
+	l++;
 	// ExtensionsLength
 	if (len < (l + 2)) return false;
 	*off = l;
@@ -559,7 +565,7 @@ bool TLSFindExtLenOffsetInHandshake(const uint8_t *data, size_t len, size_t *off
 }
 bool TLSFindExtLen(const uint8_t *data, size_t len, size_t *off)
 {
-	if (!TLSFindExtLenOffsetInHandshake(data+5,len-5,off))
+	if (len<5 || !TLSFindExtLenOffsetInHandshake(data+5,len-5,off))
 		return false;
 	*off+=5;
 	return true;
@@ -643,9 +649,11 @@ bool TLSAdvanceToHostInSNI(const uint8_t **ext, size_t *elen, size_t *slen)
 	// u8	data+2 - server name type. 0=host_name
 	// u16	data+3 - server name length
 	if (*elen < 5 || (*ext)[2] != 0) return false;
+	uint16_t nll = pntoh16(*ext);
 	*slen = pntoh16(*ext + 3);
+	if (nll<(*slen+3) || *slen > *elen-5) return false;
 	*ext += 5; *elen -= 5;
-	return *slen <= *elen;
+	return true;
 }
 static bool TLSExtractHostFromExt(const uint8_t *ext, size_t elen, char *host, size_t len_host)
 {
@@ -764,9 +772,10 @@ bool TLSMod_parse_list(const char *modlist, struct fake_tls_mod *tls_mod)
 }
 
 // payload is related to received tls client hello
+// if options cannot be applied because of the base fake - it's fatal. you should provide valid fake tls with required extensions.
+// if options cannot be applied because of the payload - it's non-fatal. some options may not be applied with warning.
 bool TLSMod(const struct fake_tls_mod *tls_mod, const uint8_t *payload, size_t payload_len, uint8_t *fake_tls, size_t *fake_tls_size, size_t fake_tls_buf_size)
 {
-	bool bRes = true;
 	const uint8_t *ext;
 	size_t extlen,slen,extlen_offset=0,padlen_offset=0;
 
@@ -779,7 +788,7 @@ bool TLSMod(const struct fake_tls_mod *tls_mod, const uint8_t *payload, size_t p
 	{
 		if (!TLSFindExtLen(fake_tls, *fake_tls_size, &extlen_offset))
 		{
-			DLOG_ERR("cannot apply tls mod.tls structure invalid\n");
+			DLOG_ERR("cannot apply tls mod. tls structure invalid\n");
 			return false;
 		}
 		DLOG("tls extensions length offset : %zu\n", extlen_offset);
@@ -833,7 +842,7 @@ bool TLSMod(const struct fake_tls_mod *tls_mod, const uint8_t *payload, size_t p
 			if (!slen)
 			{
 				DLOG_ERR("cannot apply rndsni tls mod. tls has zero sized SNI\n");
-				bRes = false;
+				return false;
 			}
 			else
 			{
@@ -879,20 +888,11 @@ bool TLSMod(const struct fake_tls_mod *tls_mod, const uint8_t *payload, size_t p
 			if (IsTLSClientHelloPartial(payload, payload_len))
 			{
 				if (payload_len < 44)
-				{
-					DLOG("cannot apply dupsid tls mod. data payload is too short.\n");
-					bRes = false;
-				}
+					DLOG("(nonfatal) cannot apply dupsid tls mod. data payload is too short.\n");
 				else if (fake_tls[43] != payload[43])
-				{
-					DLOG("cannot apply dupsid tls mod. fake and orig session id length mismatch : %u!=%u.\n", fake_tls[43], payload[43]);
-					bRes = false;
-				}
+					DLOG("(nonfatal) cannot apply dupsid tls mod. fake and orig session id length mismatch : %u!=%u.\n", fake_tls[43], payload[43]);
 				else if (payload_len < (44 + payload[43]))
-				{
-					DLOG("cannot apply dupsid tls mod. data payload is not valid.\n");
-					bRes = false;
-				}
+					DLOG("(nonfatal) cannot apply dupsid tls mod. data payload is not valid.\n");
 				else
 				{
 					memcpy(fake_tls + 44, payload + 44, fake_tls[43]); // session id
@@ -901,8 +901,7 @@ bool TLSMod(const struct fake_tls_mod *tls_mod, const uint8_t *payload, size_t p
 			}
 			else
 			{
-				DLOG_ERR("cannot apply dupsid tls mod. payload is not valid tls.\n");
-				bRes = false;
+				DLOG_ERR("(nonfatal) cannot apply dupsid tls mod. payload is not valid tls.\n");
 			}
 		}
 		if (tls_mod->mod & FAKE_TLS_MOD_PADENCAP)
@@ -940,8 +939,7 @@ bool TLSMod(const struct fake_tls_mod *tls_mod, const uint8_t *payload, size_t p
 			size_t sz_pad = pntoh16(fake_tls + padlen_offset) + payload_len;
 			if ((sz_rec & ~0xFFFF) || (sz_handshake & ~0xFFFFFF) || (sz_ext & ~0xFFFF) || (sz_pad & ~0xFFFF))
 			{
-				DLOG("cannot apply padencap tls mod. length overflow.\n");
-				bRes = false;
+				DLOG("(nonfatal) cannot apply padencap tls mod. length overflow.\n");
 			}
 			else
 			{
@@ -954,7 +952,7 @@ bool TLSMod(const struct fake_tls_mod *tls_mod, const uint8_t *payload, size_t p
 		}
 	}
 	
-	return bRes;
+	return true;
 }
 
 
@@ -1188,16 +1186,16 @@ bool QUICDecryptInitial(const uint8_t *data, size_t data_len, uint8_t *clean, si
 		return false;
 	}
 
-	uint64_t payload_len,token_len;
-	size_t pn_offset;
+	uint64_t payload_len,token_len,pn_offset;
 	pn_offset = 1 + 4 + 1 + data[5];
 	if (pn_offset >= data_len) return false;
+	// SCID length
 	pn_offset += 1 + data[pn_offset];
-	if ((pn_offset + tvb_get_size(data[pn_offset])) >= data_len) return false;
+	if (pn_offset >= data_len || (pn_offset + tvb_get_size(data[pn_offset])) >= data_len) return false;
+	// token length
 	pn_offset += tvb_get_varint(data + pn_offset, &token_len);
 	pn_offset += token_len;
-	if (pn_offset >= data_len) return false;
-	if ((pn_offset + tvb_get_size(data[pn_offset])) >= data_len) return false;
+	if (pn_offset >= data_len || (pn_offset + tvb_get_size(data[pn_offset])) >= data_len) return false;
 	pn_offset += tvb_get_varint(data + pn_offset, &payload_len);
 	if (payload_len<20 || (pn_offset + payload_len)>data_len) return false;
 
@@ -1218,17 +1216,17 @@ bool QUICDecryptInitial(const uint8_t *data, size_t data_len, uint8_t *clean, si
 
  	phton64(aesiv + sizeof(aesiv) - 8, pntoh64(aesiv + sizeof(aesiv) - 8) ^ pkn);
 
-	size_t cryptlen = payload_len - pkn_len - 16;
+	uint64_t cryptlen = payload_len - pkn_len - 16;
 	if (cryptlen > *clean_len) return false;
-	*clean_len = cryptlen;
+	*clean_len = (size_t)cryptlen;
 	const uint8_t *decrypt_begin = data + pn_offset + pkn_len;
 
 	uint8_t atag[16],header[2048];
-	size_t header_len = pn_offset + pkn_len;
+	uint64_t header_len = pn_offset + pkn_len;
 	if (header_len > sizeof(header)) return false; // not likely header will be so large
 	memcpy(header, data, header_len);
 	header[0] = packet0;
-	for(size_t i = 0; i < pkn_len; i++) header[header_len - 1 - i] = (uint8_t)(pkn >> (8 * i));
+	for(uint8_t i = 0; i < pkn_len; i++) header[header_len - 1 - i] = (uint8_t)(pkn >> (8 * i));
 
 	if (aes_gcm_crypt(AES_DECRYPT, clean, decrypt_begin, cryptlen, aeskey, sizeof(aeskey), aesiv, sizeof(aesiv), header, header_len, atag, sizeof(atag)))
 		return false;
@@ -1246,6 +1244,13 @@ static int cmp_range64(const void * a, const void * b)
 {
 	return (((struct range64*)a)->offset < ((struct range64*)b)->offset) ? -1 : (((struct range64*)a)->offset > ((struct range64*)b)->offset) ? 1 : 0;
 }
+/*
+static bool intersected_u64(uint64_t l1, uint64_t r1, uint64_t l2, uint64_t r2)
+{
+	return l1 <= r2 && l2 <= r1;
+}
+*/
+
 bool QUICDefragCrypto(const uint8_t *clean,size_t clean_len, uint8_t *defrag,size_t *defrag_len, bool *bFull)
 {
 	// Crypto frame can be split into multiple chunks
@@ -1259,7 +1264,7 @@ bool QUICDefragCrypto(const uint8_t *clean,size_t clean_len, uint8_t *defrag,siz
 	uint64_t offset,sz,szmax=0,zeropos=0,pos=0;
 	bool found=false;
 	struct range64 ranges[MAX_DEFRAG_PIECES];
-	int i,range=0;
+	int i,j,range=0;
 
 	while(pos<clean_len)
 	{
@@ -1281,24 +1286,54 @@ bool QUICDefragCrypto(const uint8_t *clean,size_t clean_len, uint8_t *defrag,siz
 			if ((pos+sz)>clean_len) return false;
 
 			if ((offset+sz)>defrag_data_len) return false; // defrag buf overflow
+
+			// remove exact duplicates early to save cpu
+			for(i=0;i<range;i++)
+				if (ranges[i].offset==offset && ranges[i].len==sz)
+					goto skip_range;
+
 			if (zeropos < offset)
 				// make sure no uninitialized gaps exist in case of not full fragment coverage
 				memset(defrag_data+zeropos,0,offset-zeropos);
 			if ((offset+sz) > zeropos)
 				zeropos=offset+sz;
-			memcpy(defrag_data+offset,clean+pos,sz);
-			if ((offset+sz) > szmax) szmax = offset+sz;
 
 			found=true;
-			pos+=sz;
-
+			if ((offset+sz) > szmax) szmax = offset+sz;
+			memcpy(defrag_data+offset,clean+pos,sz);
 			ranges[range].offset = offset;
 			ranges[range].len = sz;
 			range++;
+skip_range:
+			pos+=sz;
 		}
 	}
 	if (found)
 	{
+		qsort(ranges, range, sizeof(*ranges), cmp_range64);
+
+//		for(i=0 ; i<range ; i++)
+//			printf("range1 %llu-%llu\n",ranges[i].offset,ranges[i].offset+ranges[i].len);
+
+		if (range>0)
+		{
+			for (j=0,i=1; i < range; i++)
+			{
+				uint64_t current_end = ranges[j].offset + ranges[j].len;
+				uint64_t next_start = ranges[i].offset;
+				uint64_t next_end = ranges[i].offset + ranges[i].len;
+
+				if (next_start <= current_end)
+					ranges[j].len = MAX(next_end,current_end) - ranges[j].offset;
+				else
+					ranges[++j] = ranges[i];
+			}
+			range = j+1;
+		}
+
+//		for(i=0 ; i<range ; i++)
+//			printf("range2 %llu-%llu\n",ranges[i].offset,ranges[i].offset+ranges[i].len);
+
 		defrag[0] = 6;
 		defrag[1] = 0; // offset
 		// 2..9 - length 64 bit
@@ -1307,21 +1342,7 @@ bool QUICDefragCrypto(const uint8_t *clean,size_t clean_len, uint8_t *defrag,siz
 		defrag[2] |= 0xC0; // 64 bit value
 		*defrag_len = (size_t)(szmax+10);
 
-		qsort(ranges, range, sizeof(*ranges), cmp_range64);
-
-		//for(i=0 ; i<range ; i++)
-		//	printf("RANGE %zu len %zu\n",ranges[i].offset,ranges[i].len);
-
-		for(i=0,offset=0,*bFull=true ; i<range ; i++)
-		{
-			if (ranges[i].offset!=offset)
-			{
-				*bFull = false;
-				break;
-			}
-			offset += ranges[i].len;
-		}
-
+		*bFull = range==1 && !ranges[0].offset;
 		//printf("bFull=%u\n",*bFull);
 	}
 	return found;
@@ -1331,20 +1352,20 @@ bool IsQUICInitial(const uint8_t *data, size_t len)
 {
 	// too small packets are not likely to be initials
 	// long header, fixed bit
-	if (len < 128 || (data[0] & 0xF0)!=0xC0) return false;
+	if (len < 128) return false;
 
 	uint32_t ver = QUICExtractVersion(data,len);
 	if (QUICDraftVersion(ver) < 11) return false;
 
-	// quic v1 : initial packets are 00b
-	// quic v2 : initial packets are 01b
-	if ((data[0] & 0x30) != (is_quic_v2(ver) ? 0x10 : 0x00)) return false;
+	if ((data[0] & 0xF0) != (is_quic_v2(ver) ? 0xD0 : 0xC0)) return false;
 
 	uint64_t offset=5, sz, sz2;
 
 	// DCID
 	if (data[offset] > QUIC_MAX_CID_LENGTH) return false;
 	offset += 1 + data[offset];
+
+	if (offset>=len) return false;
 
 	// SCID
 	if (data[offset] > QUIC_MAX_CID_LENGTH) return false;
@@ -1441,7 +1462,7 @@ bool IsStunMessage(const uint8_t *data, size_t len)
 		(data[0]&0xC0)==0 && // 2 most significant bits must be zeroes
 		(data[3]&3)==0 && // length must be a multiple of 4
 		pntoh32(data+4)==0x2112A442 && // magic cookie
-		pntoh16(data+2)==(len-20);
+		pntoh16(data+2)<=(len-20);
 }
 #if defined(__GNUC__) && !defined(__llvm__)
 __attribute__((optimize ("no-strict-aliasing")))
@@ -1456,7 +1477,7 @@ bool IsMTProto(const uint8_t *data, size_t len)
 		return !memcmp(decrypt+56,"\xEF\xEF\xEF\xEF",4);
 */
 		// this way requires only one AES instead of 4
-		uint8_t decrypt[16] __attribute__((aligned)), iv[16];
+		uint8_t decrypt[16] __attribute__((aligned(16))), iv[16] __attribute__((aligned(16)));
 		aes_context ctx;
 
 		memcpy(iv, data+40, 16);

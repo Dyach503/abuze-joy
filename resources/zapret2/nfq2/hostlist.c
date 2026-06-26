@@ -8,8 +8,10 @@ static bool addpool(hostlist_pool **hostlist, char **s, const char *end, int *ct
 {
 	char *p=*s;
 
+	for (; p<end && (*p==' ' || *p=='\t') ; p++);
+	*s = p;
 	// comment line ?
-	if ( *p != '#' && *p != ';' && *p != '/' && *p != '\r' && *p != '\n')
+	if (p<end && *p != '#' && *p != ';' && *p != '/' && *p != '\r' && *p != '\n')
 	{
 		// advance until eol lowering all chars
 		uint32_t flags = 0;
@@ -60,22 +62,25 @@ bool AppendHostList(hostlist_pool **hostlist, const char *filename)
 	{
 		r = z_readfile(F,&zbuf,&zsize,0);
 		fclose(F);
-		if (r==Z_OK)
+		if (r==Z_STREAM_END)
 		{
 			DLOG_CONDUP("zlib compression detected. uncompressed size : %zu\n", zsize);
 
-			p = zbuf;
-			e = zbuf + zsize;
-			while(p<e)
+			if (zbuf)
 			{
-				if (!addpool(hostlist,&p,e,&ct))
+				p = zbuf;
+				e = zbuf + zsize;
+				while(p<e)
 				{
-					DLOG_ERR("Not enough memory to store host list : %s\n", filename);
-					free(zbuf);
-					return false;
+					if (!addpool(hostlist,&p,e,&ct))
+					{
+						DLOG_ERR("Not enough memory to store host list : %s\n", filename);
+						free(zbuf);
+						return false;
+					}
 				}
+				free(zbuf);
 			}
-			free(zbuf);
 		}
 		else
 		{
@@ -87,7 +92,7 @@ bool AppendHostList(hostlist_pool **hostlist, const char *filename)
 	{
 		DLOG_CONDUP("loading plain text list\n");
 
-		while (fgets(s, sizeof(s), F))
+		while (fgets_safe(s, sizeof(s), F))
 		{
 			p = s;
 			if (!addpool(hostlist,&p,p+strlen(p),&ct))
@@ -96,6 +101,12 @@ bool AppendHostList(hostlist_pool **hostlist, const char *filename)
 				fclose(F);
 				return false;
 			}
+		}
+		if (ferror(F))
+		{
+			DLOG_PERROR("AppendHostList");
+			fclose(F);
+			return false;
 		}
 		fclose(F);
 	}
@@ -274,13 +285,15 @@ bool HostlistCheck(const struct desync_profile *dp, const char *host, bool no_ma
 static struct hostlist_file *RegisterHostlist_(struct hostlist_files_head *hostlists, struct hostlist_collection_head *hl_collection, const char *filename)
 {
 	struct hostlist_file *hfile;
+	char pabs[PATH_MAX];
 
 	if (filename)
 	{
-		if (!(hfile=hostlist_files_search(hostlists, filename)))
-			if (!(hfile=hostlist_files_add(hostlists, filename)))
+		if (!realpath(filename,pabs)) return NULL;
+		if (!(hfile=hostlist_files_search(hostlists, pabs)))
+			if (!(hfile=hostlist_files_add(hostlists, pabs)))
 				return NULL;
-		if (!hostlist_collection_search(hl_collection, filename))
+		if (!hostlist_collection_search(hl_collection, pabs))
 			if (!hostlist_collection_add(hl_collection, hfile))
 				return NULL;
 	}
@@ -296,13 +309,11 @@ static struct hostlist_file *RegisterHostlist_(struct hostlist_files_head *hostl
 }
 struct hostlist_file *RegisterHostlist(struct desync_profile *dp, bool bExclude, const char *filename)
 {
-/*
 	if (filename && !file_mod_time(filename))
 	{
 		DLOG_ERR("cannot access hostlist file '%s'\n",filename);
 		return NULL;
 	}
-*/
 	return RegisterHostlist_(
 		&params.hostlists,
 		bExclude ? &dp->hl_collection_exclude : &dp->hl_collection,

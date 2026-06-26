@@ -94,7 +94,7 @@
 
 // returns netorder value
 uint32_t net32_add(uint32_t netorder_value, uint32_t cpuorder_increment);
-uint32_t net16_add(uint16_t netorder_value, uint16_t cpuorder_increment);
+uint16_t net16_add(uint16_t netorder_value, uint16_t cpuorder_increment);
 
 #define SCALE_NONE ((uint8_t)-1)
 
@@ -121,7 +121,7 @@ bool tcp_synack_segment(const struct tcphdr *tcphdr);
 bool tcp_syn_segment(const struct tcphdr *tcphdr);
 
 
-bool make_writeable_dir();
+bool make_writable_dir();
 bool ensure_file_access(const char *filename);
 #ifdef __CYGWIN__
 extern uint32_t w_win32_error;
@@ -135,7 +135,7 @@ bool logical_net_filter_present(void);
 bool logical_net_filter_match(void);
 bool nlm_list(bool bAll);
 bool windivert_init(const char *filter);
-bool windivert_recv(uint8_t *packet, size_t *len, WINDIVERT_ADDRESS *wa, unsigned int *wa_count);
+bool windivert_recv(uint8_t *packet, size_t *len, WINDIVERT_ADDRESS *wa, unsigned int *wa_count, uint64_t *bt_next);
 bool windivert_send(const uint8_t *packet, size_t len, const WINDIVERT_ADDRESS *wa);
 #else
 #define ensure_dir_access(dir) ensure_file_access(dir)
@@ -175,10 +175,10 @@ void str_icmphdr(char *s, size_t s_len, bool v6, const struct icmp46 *icmp);
 
 bool proto_check_ipv4(const uint8_t *data, size_t len);
 bool proto_check_ipv4_payload(const uint8_t *data, size_t len);
-void proto_skip_ipv4(const uint8_t **data, size_t *len);
+void proto_skip_ipv4(const uint8_t **data, size_t *len, bool *frag, uint16_t *frag_off);
 bool proto_check_ipv6(const uint8_t *data, size_t len);
 bool proto_check_ipv6_payload(const uint8_t *data, size_t len);
-void proto_skip_ipv6(const uint8_t **data, size_t *len, uint8_t *proto_type);
+void proto_skip_ipv6(const uint8_t **data, size_t *len, uint8_t *proto_type, bool *frag, uint16_t *frag_off);
 uint8_t *proto_find_ip6_exthdr(struct ip6_hdr *ip6, size_t len, uint8_t proto);
 bool proto_check_tcp(const uint8_t *data, size_t len);
 void proto_skip_tcp(const uint8_t **data, size_t *len);
@@ -203,6 +203,8 @@ struct dissect
 	size_t transport_len;
 	const uint8_t *data_payload;
 	size_t len_payload;
+	bool frag;
+	uint16_t frag_off;
 };
 void proto_dissect_l3l4(const uint8_t *data, size_t len, struct dissect *dis, bool no_payload_check);
 void reverse_ip(struct ip *ip, struct ip6_hdr *ip6);

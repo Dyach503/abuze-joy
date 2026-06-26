@@ -258,8 +258,6 @@ int gcm_start(gcm_context *ctx,    // pointer to user-provided GCM context
 	size_t use_len;     // byte count to process, up to 16 bytes
 	size_t i;           // local loop iterator
 
-	if (iv_len!=12) return -1;
-
 	// since the context might be reused under the same key
 	// we zero the working buffers for this next new process
 	memset(ctx->y, 0x00, sizeof(ctx->y));
@@ -447,7 +445,7 @@ int gcm_crypt_and_tag(
 	   prepare the gcm context with the keying material, we simply
 	   invoke each of the three GCM sub-functions in turn...
 	*/
-	if (iv_len!=12 || tag_len>16) return -1;
+	if (tag_len>16) return -1;
 
 	int ret;
 	if ((ret=gcm_start(ctx, mode, iv, iv_len, add, add_len))) return ret;
@@ -483,26 +481,28 @@ int gcm_auth_decrypt(
 	uchar check_tag[16];        // the tag generated and returned by decryption
 	int diff;                   // an ORed flag to detect authentication errors
 	size_t i;                   // our local iterator
+	int ret;
 
-	if (iv_len!=12 || tag_len>16) return -1;
+	if (tag_len>16) return -1;
 
 	/*
 	   we use GCM_DECRYPT_AND_TAG (above) to perform our decryption
 	   (which is an identical XORing to reverse the previous one)
 	   and also to re-generate the matching authentication tag
 	*/
-	gcm_crypt_and_tag(ctx, AES_DECRYPT, iv, iv_len, add, add_len,
-		input, output, length, check_tag, tag_len);
+	if ((ret = gcm_crypt_and_tag(ctx, AES_DECRYPT, iv, iv_len, add, add_len, input, output, length, check_tag, tag_len))) return ret;
 
 	// now we verify the authentication tag in 'constant time'
 	for (diff = 0, i = 0; i < tag_len; i++)
 		diff |= tag[i] ^ check_tag[i];
 
-	if (diff != 0) {                   // see whether any bits differed?
+	if (diff)
+	{
+		// see whether any bits differed?
 		memset(output, 0, length);    // if so... wipe the output data
 		return(GCM_AUTH_FAILURE);     // return GCM_AUTH_FAILURE
 	}
-	return(0);
+	return 0;
 }
 
 /******************************************************************************

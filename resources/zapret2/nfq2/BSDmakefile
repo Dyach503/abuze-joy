@@ -1,7 +1,12 @@
 CC ?= cc
 PKG_CONFIG ?= pkg-config
-OPTIMIZE ?= -Os
-CFLAGS += -std=gnu99 -s $(OPTIMIZE) -flto=auto -Wno-address-of-packed-member
+OPTIMIZE ?= -Oz
+MINSIZE ?= -flto=auto -ffunction-sections -fdata-sections
+STRIPP = -s
+CFLAGS_PIC = -fPIC
+CFLAGS += -std=gnu99  $(OPTIMIZE) $(MINSIZE) $(CFLAGS_PIC) -Wno-address-of-packed-member
+LDFLAGS_PIE = -pie
+LDFLAGS += -flto=auto -Wl,--gc-sections $(LDFLAGS_PIE)
 LIBS = -lz -lm
 SRC_FILES = *.c crypto/*.c
 
@@ -37,7 +42,7 @@ LUA_CFLAGS+=-DLUAJIT
 all: dvtws2
 
 dvtws2: $(SRC_FILES)
-	$(CC) $(CFLAGS) $(LUA_CFLAGS) -o dvtws2 $(SRC_FILES) $(LIBS) $(LUA_LIB) $(LDFLAGS)
+	$(CC) $(STRIPP) $(CFLAGS) $(LUA_CFLAGS) -o dvtws2 $(SRC_FILES) $(LIBS) $(LUA_LIB) $(LDFLAGS)
 
 clean:
 	rm -f dvtws2

@@ -11,16 +11,52 @@ const PAYLOAD_OPTIONS = [
   "quic_initial",
   "http_req",
   "http_reply",
+  "stun",
+  "discord_ip_discovery",
 ];
-const METHODS = ["fake", "multisplit", "multidisorder", "fakedsplit", "rst"];
+const METHODS = [
+  "fake",
+  "multisplit",
+  "multidisorder",
+  "fakedsplit",
+  "rst",
+  "circular",
+  "wssize",
+];
 
 // Which parameter fields each desync method exposes.
 const METHOD_FIELDS: Record<string, (keyof DesyncAction)[]> = {
-  fake: ["blob", "repeats", "tcp_ts", "tls_mod"],
-  multisplit: ["pos", "seqovl"],
-  multidisorder: ["pos", "seqovl"],
-  fakedsplit: ["pos", "pattern", "tcp_ts"],
+  fake: ["blob", "repeats", "tcp_ts", "tls_mod", "ip_autottl", "tcp_md5", "strategy"],
+  multisplit: ["pos", "seqovl", "ip_autottl", "tcp_md5", "strategy"],
+  multidisorder: ["pos", "seqovl", "ip_autottl", "tcp_md5", "strategy"],
+  fakedsplit: ["pos", "pattern", "tcp_ts", "ip_autottl", "tcp_md5", "strategy"],
   rst: ["pos"],
+  circular: ["fails", "maxtime", "retrans", "maxseq", "reset", "udp_out", "udp_in"],
+  wssize: ["wsize", "scale", "strategy"],
+};
+
+// Per-field metadata for the generic desync parameter renderer.
+type FieldType = "text" | "bool" | "blob";
+const FIELD_META: Record<string, { label: string; placeholder?: string; type: FieldType }> = {
+  blob: { label: "builder.desync.blob", type: "blob" },
+  pos: { label: "builder.desync.pos", placeholder: "1,midsld", type: "text" },
+  seqovl: { label: "builder.desync.seqovl", placeholder: "652", type: "text" },
+  pattern: { label: "builder.desync.pattern", placeholder: "0x00", type: "text" },
+  tls_mod: { label: "builder.desync.tlsMod", placeholder: "rnd,dupsid,sni=www.cloudflare.com", type: "text" },
+  repeats: { label: "builder.desync.repeats", placeholder: "6", type: "text" },
+  tcp_ts: { label: "builder.desync.tcpTs", placeholder: "-600000", type: "text" },
+  strategy: { label: "builder.desync.strategy", placeholder: "1", type: "text" },
+  ip_autottl: { label: "builder.desync.ipAutottl", placeholder: "-1,3-20", type: "text" },
+  tcp_md5: { label: "builder.desync.tcpMd5", type: "bool" },
+  fails: { label: "builder.desync.fails", placeholder: "2", type: "text" },
+  maxtime: { label: "builder.desync.maxtime", placeholder: "30", type: "text" },
+  retrans: { label: "builder.desync.retrans", placeholder: "2", type: "text" },
+  maxseq: { label: "builder.desync.maxseq", placeholder: "16384", type: "text" },
+  reset: { label: "builder.desync.reset", type: "bool" },
+  udp_out: { label: "builder.desync.udpOut", placeholder: "4", type: "text" },
+  udp_in: { label: "builder.desync.udpIn", placeholder: "1", type: "text" },
+  wsize: { label: "builder.desync.wsize", placeholder: "1", type: "text" },
+  scale: { label: "builder.desync.scale", placeholder: "6", type: "text" },
 };
 
 // Curated fallback list used when the backend blob folder can't be read (e.g. dev
@@ -40,6 +76,17 @@ function sanitizeBlobId(file: string): string {
   return file.replace(/\.bin$/, "").replace(/[^a-zA-Z0-9]/g, "_");
 }
 
+// A blob value loaded from a file (needs a `--blob=` declaration) vs. an inline hex
+// literal (`0x…`) or a built-in name (`fake_default_*`) passed through verbatim.
+function blobIsFile(blob: string): boolean {
+  const b = blob.trim();
+  return b !== "" && !b.startsWith("0x") && !b.startsWith("fake_default_");
+}
+function blobParamValue(blob: string): string {
+  const b = blob.trim();
+  return blobIsFile(b) ? sanitizeBlobId(b) : b;
+}
+
 export function newDesync(): DesyncAction {
   return {
     method: "fakedsplit",
@@ -50,6 +97,18 @@ export function newDesync(): DesyncAction {
     repeats: "",
     pattern: "",
     tls_mod: "",
+    strategy: "",
+    ip_autottl: "",
+    tcp_md5: false,
+    fails: "",
+    maxtime: "",
+    retrans: "",
+    maxseq: "",
+    reset: false,
+    udp_out: "",
+    udp_in: "",
+    wsize: "",
+    scale: "",
   };
 }
 
@@ -61,24 +120,28 @@ export function newProfile(): ZapretProfile {
     l7: ["tls"],
     payload: "tls_client_hello",
     hostlist_domains: "",
+    in_range: "",
+    out_range: "",
     desyncs: [newDesync()],
   };
 }
 
-/** Mirror of the Rust `build_profile_args` for a live, human-readable preview. */
+/** Mirror of the Rust `build_profile_args` for a live, human-readable preview.
+ * Must stay byte-identical to `build_profile_args` in config_gen.rs. */
 export function previewArgs(profiles: ZapretProfile[]): string[] {
   if (profiles.length === 0) return [];
   const args: string[] = [
     "--lua-init=@zapret2/lua/zapret-lib.lua",
     "--lua-init=@zapret2/lua/zapret-antidpi.lua",
+    "--lua-init=@zapret2/lua/zapret-auto.lua",
   ];
   const declared: string[] = [];
   for (const p of profiles) {
     for (const d of p.desyncs) {
       const blob = d.blob.trim();
-      if (blob && !declared.includes(blob)) {
+      if (blobIsFile(blob) && !declared.includes(blob)) {
         declared.push(blob);
-        args.push(`--blob=${sanitizeBlobId(blob)}:zapret2/files/fake/${blob}`);
+        args.push(`--blob=${sanitizeBlobId(blob)}:@zapret2/files/fake/${blob}`);
       }
     }
   }
@@ -91,16 +154,30 @@ export function previewArgs(profiles: ZapretProfile[]): string[] {
     if (p.payload.trim()) args.push(`--payload=${p.payload.trim()}`);
     if (p.hostlist_domains.trim())
       args.push(`--hostlist-domains=${p.hostlist_domains.trim()}`);
+    if (p.in_range.trim()) args.push(`--in-range=${p.in_range.trim()}`);
+    if (p.out_range.trim()) args.push(`--out-range=${p.out_range.trim()}`);
     for (const d of p.desyncs) {
       if (!d.method.trim()) continue;
       const parts = [d.method.trim()];
-      if (d.blob.trim()) parts.push(`blob=${sanitizeBlobId(d.blob.trim())}`);
+      if (d.blob.trim()) parts.push(`blob=${blobParamValue(d.blob.trim())}`);
       if (d.pos.trim()) parts.push(`pos=${d.pos.trim()}`);
       if (d.seqovl.trim()) parts.push(`seqovl=${d.seqovl.trim()}`);
       if (d.pattern.trim()) parts.push(`pattern=${d.pattern.trim()}`);
       if (d.tls_mod.trim()) parts.push(`tls_mod=${d.tls_mod.trim()}`);
       if (d.repeats.trim()) parts.push(`repeats=${d.repeats.trim()}`);
       if (d.tcp_ts.trim()) parts.push(`tcp_ts=${d.tcp_ts.trim()}`);
+      if (d.fails.trim()) parts.push(`fails=${d.fails.trim()}`);
+      if (d.maxtime.trim()) parts.push(`maxtime=${d.maxtime.trim()}`);
+      if (d.retrans.trim()) parts.push(`retrans=${d.retrans.trim()}`);
+      if (d.maxseq.trim()) parts.push(`maxseq=${d.maxseq.trim()}`);
+      if (d.udp_out.trim()) parts.push(`udp_out=${d.udp_out.trim()}`);
+      if (d.udp_in.trim()) parts.push(`udp_in=${d.udp_in.trim()}`);
+      if (d.reset) parts.push("reset");
+      if (d.wsize.trim()) parts.push(`wsize=${d.wsize.trim()}`);
+      if (d.scale.trim()) parts.push(`scale=${d.scale.trim()}`);
+      if (d.ip_autottl.trim()) parts.push(`ip_autottl=${d.ip_autottl.trim()}`);
+      if (d.tcp_md5) parts.push("tcp_md5");
+      if (d.strategy.trim()) parts.push(`strategy=${d.strategy.trim()}`);
       args.push(`--lua-desync=${parts.join(":")}`);
     }
   });
@@ -294,17 +371,18 @@ export default function StrategyBuilder({ profiles, onChange }: Props) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
               <div>
                 <label style={labelStyle}>{t("builder.payload")}</label>
-                <select
-                  style={inputStyle}
+                <input
+                  style={{ ...inputStyle, fontFamily: "monospace" }}
+                  list={`payloads-${pi}`}
                   value={p.payload}
+                  placeholder={t("builder.payload.none")}
                   onChange={(e) => updateProfile(pi, { payload: e.target.value })}
-                >
-                  {PAYLOAD_OPTIONS.map((pl) => (
-                    <option key={pl} value={pl}>
-                      {pl || t("builder.payload.none")}
-                    </option>
+                />
+                <datalist id={`payloads-${pi}`}>
+                  {PAYLOAD_OPTIONS.filter((pl) => pl).map((pl) => (
+                    <option key={pl} value={pl} />
                   ))}
-                </select>
+                </datalist>
               </div>
               <div>
                 <label style={labelStyle}>{t("builder.hostlist")}</label>
@@ -313,6 +391,27 @@ export default function StrategyBuilder({ profiles, onChange }: Props) {
                   value={p.hostlist_domains}
                   placeholder={t("builder.hostlist.placeholder")}
                   onChange={(e) => updateProfile(pi, { hostlist_domains: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+              <div>
+                <label style={labelStyle}>{t("builder.inRange")}</label>
+                <input
+                  style={{ ...inputStyle, fontFamily: "monospace" }}
+                  value={p.in_range}
+                  placeholder="-s4096"
+                  onChange={(e) => updateProfile(pi, { in_range: e.target.value })}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>{t("builder.outRange")}</label>
+                <input
+                  style={{ ...inputStyle, fontFamily: "monospace" }}
+                  value={p.out_range}
+                  placeholder="-d10"
+                  onChange={(e) => updateProfile(pi, { out_range: e.target.value })}
                 />
               </div>
             </div>
@@ -364,89 +463,68 @@ export default function StrategyBuilder({ profiles, onChange }: Props) {
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                    {fields.includes("blob") && (
-                      <div>
-                        <label style={labelStyle}>{t("builder.desync.blob")}</label>
-                        <select
-                          style={inputStyle}
-                          value={d.blob}
-                          onChange={(e) => updateDesync(pi, di, { blob: e.target.value })}
-                        >
-                          <option value="">{t("builder.desync.blob.none")}</option>
-                          {blobs.map((b) => (
-                            <option key={b} value={b}>
-                              {b}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                    {fields.includes("pos") && (
-                      <div>
-                        <label style={labelStyle}>{t("builder.desync.pos")}</label>
-                        <input
-                          style={{ ...inputStyle, fontFamily: "monospace" }}
-                          value={d.pos}
-                          placeholder={t("builder.hint.pos")}
-                          onChange={(e) => updateDesync(pi, di, { pos: e.target.value })}
-                        />
-                      </div>
-                    )}
-                    {fields.includes("seqovl") && (
-                      <div>
-                        <label style={labelStyle}>{t("builder.desync.seqovl")}</label>
-                        <input
-                          style={{ ...inputStyle, fontFamily: "monospace" }}
-                          value={d.seqovl}
-                          placeholder="652"
-                          onChange={(e) => updateDesync(pi, di, { seqovl: e.target.value })}
-                        />
-                      </div>
-                    )}
-                    {fields.includes("pattern") && (
-                      <div>
-                        <label style={labelStyle}>{t("builder.desync.pattern")}</label>
-                        <input
-                          style={{ ...inputStyle, fontFamily: "monospace" }}
-                          value={d.pattern}
-                          placeholder="0x00"
-                          onChange={(e) => updateDesync(pi, di, { pattern: e.target.value })}
-                        />
-                      </div>
-                    )}
-                    {fields.includes("repeats") && (
-                      <div>
-                        <label style={labelStyle}>{t("builder.desync.repeats")}</label>
-                        <input
-                          style={{ ...inputStyle, fontFamily: "monospace" }}
-                          value={d.repeats}
-                          placeholder="6"
-                          onChange={(e) => updateDesync(pi, di, { repeats: e.target.value })}
-                        />
-                      </div>
-                    )}
-                    {fields.includes("tcp_ts") && (
-                      <div>
-                        <label style={labelStyle}>{t("builder.desync.tcpTs")}</label>
-                        <input
-                          style={{ ...inputStyle, fontFamily: "monospace" }}
-                          value={d.tcp_ts}
-                          placeholder={t("builder.hint.tcpTs")}
-                          onChange={(e) => updateDesync(pi, di, { tcp_ts: e.target.value })}
-                        />
-                      </div>
-                    )}
-                    {fields.includes("tls_mod") && (
-                      <div>
-                        <label style={labelStyle}>{t("builder.desync.tlsMod")}</label>
-                        <input
-                          style={{ ...inputStyle, fontFamily: "monospace" }}
-                          value={d.tls_mod}
-                          placeholder="rnd,dupsid,sni=www.cloudflare.com"
-                          onChange={(e) => updateDesync(pi, di, { tls_mod: e.target.value })}
-                        />
-                      </div>
-                    )}
+                    {fields.map((f) => {
+                      const meta = FIELD_META[f];
+                      if (!meta) return null;
+                      const label = t(meta.label);
+
+                      if (meta.type === "blob") {
+                        return (
+                          <div key={f}>
+                            <label style={labelStyle}>{label}</label>
+                            <input
+                              style={{ ...inputStyle, fontFamily: "monospace" }}
+                              list={`blobs-${pi}-${di}`}
+                              value={d.blob}
+                              placeholder={t("builder.desync.blob.none")}
+                              onChange={(e) => updateDesync(pi, di, { blob: e.target.value })}
+                            />
+                            <datalist id={`blobs-${pi}-${di}`}>
+                              {blobs.map((b) => (
+                                <option key={b} value={b} />
+                              ))}
+                            </datalist>
+                          </div>
+                        );
+                      }
+
+                      if (meta.type === "bool") {
+                        const checked = Boolean(d[f]);
+                        return (
+                          <label
+                            key={f}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              fontSize: "0.78rem",
+                              color: "var(--text-dim)",
+                              alignSelf: "end",
+                              paddingBottom: 8,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => updateDesync(pi, di, { [f]: e.target.checked } as Partial<DesyncAction>)}
+                            />
+                            {label}
+                          </label>
+                        );
+                      }
+
+                      return (
+                        <div key={f}>
+                          <label style={labelStyle}>{label}</label>
+                          <input
+                            style={{ ...inputStyle, fontFamily: "monospace" }}
+                            value={String(d[f] ?? "")}
+                            placeholder={meta.placeholder}
+                            onChange={(e) => updateDesync(pi, di, { [f]: e.target.value } as Partial<DesyncAction>)}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );

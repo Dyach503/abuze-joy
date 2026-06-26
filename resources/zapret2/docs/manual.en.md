@@ -34,13 +34,15 @@
     - [Passing blobs](#passing-blobs)
     - [In-profile filters](#in-profile-filters)
     - [Typical instance invocation scheme within a profile](#typical-instance-invocation-scheme-within-a-profile)
-  - [Lua function prototype](#lua-function-prototype)
+  - [Lua desync function prototype](#lua-desync-function-prototype)
     - [Structure of the desync table](#structure-of-the-desync-table)
     - [Dissect structure](#dissect-structure)
     - [Handling multi-packet payloads](#handling-multi-packet-payloads)
     - [The track table structure](#the-track-table-structure)
       - [ICMP processing](#icmp-processing)
       - [raw IP processing](#raw-ip-processing)
+  - [Timers](#timers)
+    - [Timer function prototype](#timer-function-prototype)
 - [nfqws2 C interface](#nfqws2-c-interface)
   - [Base constants](#base-constants)
   - [Standard blobs](#standard-blobs)
@@ -59,21 +61,21 @@
     - [Random Data Generation](#random-data-generation)
       - [brandom](#brandom)
     - [Parsing](#parsing)
-      - [parse\_hex](#parse_hex)
+      - [parse_hex](#parse_hex)
     - [Cryptography](#cryptography)
       - [bcryptorandom](#bcryptorandom)
       - [bxor,bor,band](#bxorborband)
       - [hash](#hash)
       - [aes](#aes)
-      - [aes\_gcm](#aes_gcm)
-      - [aes\_ctr](#aes_ctr)
+      - [aes_gcm](#aes_gcm)
+      - [aes_ctr](#aes_ctr)
       - [hkdf](#hkdf)
     - [Compression](#compression)
       - [gunzip](#gunzip)
       - [gzip](#gzip)
     - [System functions](#system-functions)
       - [uname](#uname)
-      - [clock\_gettime](#clock_gettime)
+      - [clock_gettime](#clock_gettime)
       - [getpid](#getpid)
       - [stat](#stat)
       - [time](#time)
@@ -82,23 +84,28 @@
       - [standard rawsend](#standard-rawsend)
     - [Dissection and reconstruction](#dissection-and-reconstruction)
       - [dissect](#dissect)
-      - [reconstruct\_dissect](#reconstruct_dissect)
-      - [reconstruct\_hdr](#reconstruct_hdr)
-      - [csum\_fix](#csum_fix)
+      - [reconstruct_dissect](#reconstruct_dissect)
+      - [reconstruct_hdr](#reconstruct_hdr)
+      - [csum_fix](#csum_fix)
     - [conntrack](#conntrack)
     - [Obtaining IP addresses](#obtaining-ip-addresses)
     - [Receiving and sending Packets](#receiving-and-sending-packets)
       - [rawsend](#rawsend)
-      - [raw\_packet](#raw_packet)
+      - [raw_packet](#raw_packet)
     - [Working with payloads](#working-with-payloads)
       - [Markers](#markers)
-      - [resolve\_pos](#resolve_pos)
-      - [tls\_mod](#tls_mod)
+      - [resolve_pos](#resolve_pos)
+      - [tls_mod](#tls_mod)
     - [Instance execution management](#instance-execution-management)
-      - [instance\_cutoff](#instance_cutoff)
-      - [lua\_cutoff](#lua_cutoff)
-      - [execution\_plan](#execution_plan)
-      - [execution\_plan\_cancel](#execution_plan_cancel)
+      - [instance_cutoff](#instance_cutoff)
+      - [lua_cutoff](#lua_cutoff)
+      - [execution_plan](#execution_plan)
+      - [execution_plan_cancel](#execution_plan_cancel)
+    - [Timer control](#timer-control)
+      - [timer_set](#timer_set)
+      - [timer_del](#timer_del)
+      - [timer_info](#timer_info)
+      - [timer_enum](#timer_enum)
 - [zapret-lib.lua base function library](#zapret-liblua-base-function-library)
   - [Base desync functions](#base-desync-functions)
     - [luaexec](#luaexec)
@@ -106,16 +113,16 @@
     - [pktdebug](#pktdebug)
     - [argdebug](#argdebug)
     - [posdebug](#posdebug)
-    - [detect\_payload\_str](#detect_payload_str)
-    - [desync\_orchestrator\_example](#desync_orchestrator_example)
+    - [detect_payload_str](#detect_payload_str)
+    - [desync_orchestrator_example](#desync_orchestrator_example)
   - [Utility functions](#utility-functions)
-    - [var\_debug](#var_debug)
+    - [var_debug](#var_debug)
     - [deepcopy](#deepcopy)
-    - [logical\_xor](#logical_xor)
-    - [array\_search](#array_search)
+    - [logical_xor](#logical_xor)
+    - [array_search](#array_search)
   - [String operations](#string-operations)
-    - [in\_list](#in_list)
-    - [find\_next\_line](#find_next_line)
+    - [in_list](#in_list)
+    - [find_next_line](#find_next_line)
   - [Raw string handling](#raw-string-handling)
     - [hex](#hex)
     - [pattern](#pattern)
@@ -123,18 +130,18 @@
   - [TCP sequence number handling](#tcp-sequence-number-handling)
   - [Position handling](#position-handling)
   - [Dissection](#dissection)
-    - [dissect\_url](#dissect_url)
-    - [dissect\_nld](#dissect_nld)
-    - [dissect\_http](#dissect_http)
-    - [dissect\_tls](#dissect_tls)
+    - [dissect_url](#dissect_url)
+    - [dissect_nld](#dissect_nld)
+    - [dissect_http](#dissect_http)
+    - [dissect_tls](#dissect_tls)
   - [Working with L3 and L4 protocol elements](#working-with-l3-and-l4-protocol-elements)
-    - [find\_tcp\_options](#find_tcp_options)
+    - [find_tcp_options](#find_tcp_options)
     - [ip6hdr](#ip6hdr)
     - [ip protocol](#ip-protocol)
-    - [packet\_len](#packet_len)
+    - [packet_len](#packet_len)
   - [Working with hostnames](#working-with-hostnames)
     - [genhost](#genhost)
-    - [host\_ip](#host_ip)
+    - [host_ip](#host_ip)
   - [File name and path operations](#file-name-and-path-operations)
   - [Reading and writing Files](#reading-and-writing-files)
   - [Data compression](#data-compression)
@@ -143,29 +150,30 @@
     - [standard ipid](#standard-ipid)
     - [standard fooling](#standard-fooling)
     - [standard ipfrag](#standard-ipfrag)
-    - [apply\_ip\_id](#apply_ip_id)
-    - [apply\_fooling](#apply_fooling)
+    - [apply_ip_id](#apply_ip_id)
+    - [apply_fooling](#apply_fooling)
     - [ipfrag2](#ipfrag2)
-    - [wssize\_rewrite](#wssize_rewrite)
-    - [dis\_reverse](#dis_reverse)
+    - [wssize_rewrite](#wssize_rewrite)
+    - [dis_reverse](#dis_reverse)
   - [IP addresses and interfaces](#ip-addresses-and-interfaces)
   - [Sending](#sending)
-    - [rawsend\_dissect\_ipfrag](#rawsend_dissect_ipfrag)
-    - [rawsend\_dissect\_segmented](#rawsend_dissect_segmented)
-    - [rawsend\_payload\_segmented](#rawsend_payload_segmented)
+    - [rawsend_dissect_ipfrag](#rawsend_dissect_ipfrag)
+    - [rawsend_dissect_segmented](#rawsend_dissect_segmented)
+    - [rawsend_payload_segmented](#rawsend_payload_segmented)
   - [Standard direction and payload filters](#standard-direction-and-payload-filters)
   - [Working with multi-packet payloads](#working-with-multi-packet-payloads)
+  - [Timer helpers](#timer-helpers)
   - [Orchestration](#orchestration)
-    - [instance\_cutoff\_shim](#instance_cutoff_shim)
-    - [cutoff\_shim\_check](#cutoff_shim_check)
-    - [apply\_arg\_prefix](#apply_arg_prefix)
-    - [apply\_execution\_plan](#apply_execution_plan)
-    - [verdict\_aggregate](#verdict_aggregate)
-    - [plan\_instance\_execute](#plan_instance_execute)
-    - [plan\_instance\_pop](#plan_instance_pop)
-    - [plan\_clear](#plan_clear)
+    - [instance_cutoff_shim](#instance_cutoff_shim)
+    - [cutoff_shim_check](#cutoff_shim_check)
+    - [apply_arg_prefix](#apply_arg_prefix)
+    - [apply_execution_plan](#apply_execution_plan)
+    - [verdict_aggregate](#verdict_aggregate)
+    - [plan_instance_execute](#plan_instance_execute)
+    - [plan_instance_pop](#plan_instance_pop)
+    - [plan_clear](#plan_clear)
     - [orchestrate](#orchestrate)
-    - [replay\_execution\_plan](#replay_execution_plan)
+    - [replay_execution_plan](#replay_execution_plan)
 - [zapret-antidpi.lua DPI attack program library](#zapret-antidpilua-dpi-attack-program-library)
   - [Standard parameter sets](#standard-parameter-sets)
     - [standard direction](#standard-direction)
@@ -175,22 +183,22 @@
     - [send](#send)
     - [pktmod](#pktmod)
   - [HTTP fooling](#http-fooling)
-    - [http\_hostcase](#http_hostcase)
-    - [http\_domcase](#http_domcase)
-    - [http\_methodeol](#http_methodeol)
-    - [http\_unixeol](#http_unixeol)
+    - [http_hostcase](#http_hostcase)
+    - [http_domcase](#http_domcase)
+    - [http_methodeol](#http_methodeol)
+    - [http_unixeol](#http_unixeol)
   - [Window size replacement](#window-size-replacement)
     - [wsize](#wsize)
     - [wssize](#wssize)
   - [Fakes](#fakes)
     - [syndata](#syndata)
-    - [tls\_client\_hello\_clone](#tls_client_hello_clone)
+    - [tls_client_hello_clone](#tls_client_hello_clone)
     - [fake](#fake)
     - [rst](#rst)
   - [TCP segmentation](#tcp-segmentation)
     - [multisplit](#multisplit)
     - [multidisorder](#multidisorder)
-    - [multidisorder\_legacy](#multidisorder_legacy)
+    - [multidisorder_legacy](#multidisorder_legacy)
     - [fakedsplit](#fakedsplit)
     - [fakeddisorder](#fakeddisorder)
     - [hostfakesplit](#hostfakesplit)
@@ -198,32 +206,35 @@
     - [oob](#oob)
   - [UDP Fooling](#udp-fooling)
     - [udplen](#udplen)
-    - [dht\_dn](#dht_dn)
+    - [dht_dn](#dht_dn)
   - [Other Functions](#other-functions)
     - [synack](#synack)
-    - [synack\_split](#synack_split)
+    - [synack_split](#synack_split)
 - [zapret-auto.lua automation and orchestration library](#zapret-autolua-automation-and-orchestration-library)
   - [State storage](#state-storage)
-    - [automate\_conn\_record](#automate_conn_record)
-    - [standard\_hostkey](#standard_hostkey)
-    - [automate\_host\_record](#automate_host_record)
+    - [automate_conn_record](#automate_conn_record)
+    - [standard_hostkey](#standard_hostkey)
+    - [automate_host_record](#automate_host_record)
   - [Handling successes and failures](#handling-successes-and-failures)
-    - [automate\_failure\_counter](#automate_failure_counter)
-    - [automate\_failure\_counter\_reset](#automate_failure_counter_reset)
+    - [automate_failure_counter](#automate_failure_counter)
+    - [automate_failure_counter_reset](#automate_failure_counter_reset)
   - [Success and failure detection](#success-and-failure-detection)
-    - [automate\_failure\_check](#automate_failure_check)
-    - [standard\_success\_detector](#standard_success_detector)
-    - [standard\_failure\_detector](#standard_failure_detector)
+    - [automate_failure_check](#automate_failure_check)
+    - [standard_success_detector](#standard_success_detector)
+    - [standard_failure_detector](#standard_failure_detector)
   - [Orchestrators](#orchestrators)
     - [circular](#circular)
     - [repeater](#repeater)
     - [condition](#condition)
+    - [per_instance_condition](#per_instance_condition)
     - [stopif](#stopif)
     - [iff functions](#iff-functions)
-      - [cond\_true](#cond_true)
-      - [cond\_false](#cond_false)
-      - [cond\_random](#cond_random)
-      - [cond\_payload\_str](#cond_payload_str)
+      - [cond_true](#cond_true)
+      - [cond_false](#cond_false)
+      - [cond_random](#cond_random)
+      - [cond_payload_str](#cond_payload_str)
+      - [cond_tcp_has_ts](#cond_tcp_has_ts)
+      - [cond_lua](#cond_lua)
 - [Auxiliary programs](#auxiliary-programs)
   - [ip2net](#ip2net)
   - [mdig](#mdig)
@@ -247,16 +258,16 @@
   - [List management system](#list-management-system)
     - [Standard list files](#standard-list-files)
     - [ipset scripts](#ipset-scripts)
-      - [clear\_lists.sh](#clear_listssh)
-      - [create\_ipset.sh](#create_ipsetsh)
-      - [get\_config.sh](#get_configsh)
-      - [get\_user.sh](#get_usersh)
-      - [get\_ipban.sh](#get_ipbansh)
-      - [get\_exclude.sh](#get_excludesh)
-      - [get\_antifilter\_\*.sh](#get_antifilter_sh)
-      - [get\_antizapret\_domains.sh](#get_antizapret_domainssh)
-      - [get\_refilter\_\*.sh](#get_refilter_sh)
-      - [get\_reestr\_\*.sh](#get_reestr_sh)
+      - [clear_lists.sh](#clear_listssh)
+      - [create_ipset.sh](#create_ipsetsh)
+      - [get_config.sh](#get_configsh)
+      - [get_user.sh](#get_usersh)
+      - [get_ipban.sh](#get_ipbansh)
+      - [get_exclude.sh](#get_excludesh)
+      - [get_antifilter_*.sh](#get_antifilter_sh)
+      - [get_antizapret_domains.sh](#get_antizapret_domainssh)
+      - [get_refilter_*.sh](#get_refilter_sh)
+      - [get_reestr_*.sh](#get_reestr_sh)
     - [ipban system](#ipban-system)
   - [Init scripts](#init-scripts)
     - [Firewall integration](#firewall-integration)
@@ -340,7 +351,7 @@ Once a profile is selected, what constitutes its action-oriented logic? Actions 
 
 [in-profile filters](#in-profile-filters) are also available. There are three types: the `--payload` filter (a list of payloads accepted by the instance) and two range filters, `--in-range` and `--out-range`, which define the specific byte range within the stream that the instance should process. Once defined, in-profile filters apply to all subsequent instances until they are redefined. The primary purpose of these filters is to minimize relatively slow Lua calls by offloading as much decision-making as possible to the C-side code.
 
-When a packet reaches a Lua instance, the function receives two [parameters](#lua-function-prototype): `ctx` and `desync`. `ctx` provides a context for interacting with specific C-side functions. The [`desync`](#structure-of-the-desync-table) parameter is a table containing various attributes of the packet being processed. Most notably, it includes the [dissect](#dissect-structure) (the `dis` subtable) and information from the conntrack entry (the [track subtable](#the-track-table-structure)). Numerous other parameters can be inspected by executing [`var_debug(desync)`](#var_debug) or by using the pre-built [`pktdebug`](#pktdebug) instance.
+When a packet reaches a Lua instance, the function receives two [parameters](#lua-desync-function-prototype): `ctx` and `desync`. `ctx` provides a context for interacting with specific C-side functions. The [`desync`](#structure-of-the-desync-table) parameter is a table containing various attributes of the packet being processed. Most notably, it includes the [dissect](#dissect-structure) (the `dis` subtable) and information from the conntrack entry (the [track subtable](#the-track-table-structure)). Numerous other parameters can be inspected by executing [`var_debug(desync)`](#var_debug) or by using the pre-built [`pktdebug`](#pktdebug) instance.
 
 During the [replay](#handling-multi-packet-payloads) of delayed packets, the Lua instance receives details such as the part number, the total number of parts in the original message, the current part's position, and [reasm](#handling-multi-packet-payloads) or [decrypt](#handling-multi-packet-payloads) data if available.
 
@@ -634,6 +645,7 @@ General parameters for all versions - nfqws2, dvtws2, winws2.
  --comment=any_text                                     ; any text. ignored
  --intercept=0|1                                        ; allow interception. 0 - no, 1 - yes. If 0 lua-init scripts are executed then process exits. NFQUEUE is not initialized.
  --daemon                                               ; detach from the console (daemonize)
+ --chdir[=path]                                         ; change current directory. if no path specified use the executable file directory - EXEDIR
  --pidfile=<filename>                                   ; write PID to a file
  --ctrack-timeouts=S:E:F[:U]                            ; conntrack timeouts for tcp stages (SYN, ESTABLISHED, FIN) and for udp
  --ctrack-disable=[0|1]                                 ; 1 disables conntrack
@@ -644,7 +656,7 @@ General parameters for all versions - nfqws2, dvtws2, winws2.
  --reasm-disable=[type[,type]]                          ; disable fragment reassembly for a list of payloads: tls_client_hello quic_initial. without arguments - disable reasm for everything.
 
 DESYNC ENGINE INIT:
- --writeable[=<dir_name>]                               ; create a directory for Lua with write permissions and store its path in the "WRITEABLE" env variable (only one directory)
+ --writable[=<dir_name>]                                ; create a directory for Lua with write permissions and store its path in the "WRITABLE" env variable (only one directory)
  --blob=<item_name>:[+ofs]@<filename>|0xHEX             ; load a binary file or hex string into the Lua variable <item_name>. +ofs specifies the offset from the start of the file
  --lua-init=@<filename>|<lua_text>                      ; execute Lua code from a string or file once at startup. supports gzipped files. automatically checks for "<filename>.gz"
  --lua-gc=<int>                                         ; Lua garbage collector invocation interval in seconds. 0 disables periodic calls.
@@ -1006,7 +1018,7 @@ Windows:
 - All `Se*` privileges are irrevocably removed from the token, except for `SeChangeNotifyPrivilege`.
 - A Job object is used to prohibit the creation of child processes and restrict desktop interaction - clipboard access, changing desktop settings, changing display settings, etc.
 
-There is a simple way to pass a writable directory to the Lua code using the `--writeable[=<dirname>]` parameter. `nfqws2` creates the directory and assigns permissions so that the Lua code can write files there, then passes the directory name in the `WRITEABLE` environment variable. If `dirname` is not specified, a directory is created within `%USERPROFILE%/AppData/LocalLow` on Windows.
+There is a simple way to pass a writable directory to the Lua code using the `--writable[=<dirname>]` parameter. `nfqws2` creates the directory and assigns permissions so that the Lua code can write files there, then passes the directory name in the `WRITABLE` environment variable. If `dirname` is not specified, a directory is created within `%USERPROFILE%/AppData/LocalLow` on Windows.
 
 On the Lua side, dangerous functions are removed: `os.execute`, `io.popen`, `package.loadlib`, and the `debug` module. On GitHub, `nfqws2` executables are built with a version of LuaJIT that excludes FFI.
 
@@ -1087,7 +1099,7 @@ The specific mechanics of these functions are less important here; the focus is 
 - The `--payload` directive applies to the two instances following it.
 - The line `--lua-desync=fake:blob=fake_default_tls:badsum:strategy=1` calls the `fake` function with three arguments: `blob`, `badsum`, and `strategy`. The value for the `badsum` argument is an empty string.
 
-## Lua function prototype
+## Lua desync function prototype
 
 A standard Lua function uses the following prototype:
 
@@ -1390,6 +1402,7 @@ All multi-byte numeric values are automatically converted from network byte orde
 | :------------ | :----- | :--------------------------------------------------------------- |
 | ip            | table  | IPv4 header                                                      |
 | ip6           | table  | IPv6 header                                                      |
+| frag_off      | number | IP fragment offset. present only in IP fragments.                |
 | tcp           | table  | TCP header                                                       |
 | udp           | table  | UDP header                                                       |
 | icmp          | table  | ICMP header                                                      |
@@ -1583,6 +1596,45 @@ If the ip protocol is not recognized as tcp, udp, icmp, icmpv6, it is considered
 Dissect has ip/ip6 field and payload. Payload contains all data after L3 headers.
 desync.track is always missing.
 
+## Timers
+
+Lua code can be called independently of received network data.
+The event source is time.
+A timer is an nfqws2 object, identified by a unique name, that allows you to call a specified Lua function at a specified frequency or once after a certain period of time.
+The timer is set by the [timer_set](#timer_set) function, and deleted by the [timer_del](#timer_del) function.
+
+nfqws2 is a single-threaded program, like the Lua engine. Timers are called in the same thread that processes network data.
+In Linux and Windows, packets are received in blocks, not one at a time. A block is processed until all remaining packets are exhausted.
+Timers are called between block processing. If processing takes a significant amount of time, the timer call may not be perfectly timed.
+
+Timers can be useful for handling unreplied packets.
+For example, you need to send something somewhere and read the response. But the other party might not respond or the response might not arrive.
+To prevent your system from hanging in an undefined state and leaving garbage in memory, a timer can help.
+Using timers, desync functions, and send functions, you can build a full-fledged state machine - even your own implementation of TCP or another guaranteed delivery system.
+The system should be designed asynchronously, using a state machine. Direct sleep delays is not the option, as they break the queue-based traffic processing scheme.
+While you're waiting, everything else will hang.
+
+In the `--intercept=0` mode, if there are timers, nfqws2 doesn't exit immediately, but calls the timers until there are none left.
+After this, the process terminates.
+
+
+### Timer function prototype
+
+```
+function timer(name, data)
+```
+
+The timer function can be passed any Lua variable of any type.
+A table can be used to store state associated with the timer.
+Simple type variables can be used to pass read-only values ​​one-way.
+data is set when the timer is started via [timer_set](#timer_set).
+When the timer is deleted, the variable is automatically deallocated if there are no other references to it.
+
+If a timer function fails with an error, the timer is forcibly deleted.
+Therefore, when developing timer functions, it is especially important to avoid error conditions.
+
+A one-shot timer is automatically deleted after the timer function is called. Manual deletion is not required, although it is permitted.
+
 
 # nfqws2 C interface
 
@@ -1645,8 +1697,8 @@ Before executing `--lua-init`, the C code sets up base constants, blobs, and C f
 
 | env       | Purpose |
 | :-------- |:---------- |
-| WRITEABLE | A directory writable by Lua. Corresponds to the `--writeable` option. |
-| APPDATALOW | (Windows only) The AppData location for the low mandatory level. This is also writable, but using `--writeable` is preferred for cross-platform compatibility. |
+| WRITABLE | A directory writable by Lua. Corresponds to the `--writable` option. |
+| APPDATALOW | (Windows only) The AppData location for the low mandatory level. This is also writable, but using `--writable` is preferred for cross-platform compatibility. |
 
 ## C functions
 
@@ -2098,10 +2150,12 @@ Those functions receive an already prepared dissect.
 function reconstruct_dissect(dissect[, reconstruct_opts])
 ```
 
-Returns `raw_ip`. All checksums are calculated automatically. L4 checksums are intentionally corrupted if `badsum` is specified in `reconstruct_opts`.
+Returns `raw_ip`. All checksums are calculated automatically. L4 checksums are intentionally corrupted if `badsum` is specified in [reconstruct_opts](#standard-reconstruct).
 
-Reconstructing dissects with IP fragmentation involves a specific interaction between Lua and C code.
-The Lua code must prepare a dissect of the full packet intended for fragmentation, but fill certain fields as they should appear in the fragment:
+Reconstruction of fragmented IP packets involves special magic.
+
+1. if the "frag_off" field is present, tcp/udp/icmp headers are ignored, payload contains raw ip payload. Incoming fragmented packets come in this form. nfqws2 does not defragment at the IP layer. But this is very persistently done by Linux systems - in order for a fragment to come to nfqws2, you need to try hard by inserting "notrack" into prerouting or output. Dissects in this form can be reconstructed as is. But preparing them in Lua is extremely inconvenient, since you will have to go through the black magic of working with a binary representation.
+2. If the "frag_off" field is absent, fragment reconstruction is performed on the entire packet's dissect involving both Lua and C code. Lua code must prepare a dissect of the full packet intended for fragmentation, but fill certain fields as they should appear in the fragment:
 
 - **ipv4**: `ip.ip_len` must be calculated as it should appear in the fragment.
 The C code uses `ip.ip_len` to determine the size of the fragmented portion.
@@ -2327,6 +2381,7 @@ Returns an array of information about all subsequent, pending instances in the c
 | range          | table  | effective range of [counters](#in-profile-filters) `--in-range` or `--out-range` depending on the current direction                       |
 | payload        | table  | effective payload filter : payload name indexed table.                                                                                |
 | payload_filter | string | effective payload filter : a comma-separated list of payload names.                                                                    |
+| arg            | table  | instance arguments |
 
 **range**
 
@@ -2351,6 +2406,66 @@ function execution_plan_cancel(ctx)
 
 A one-time cancellation of all subsequent instances within a profile.
 The instance performing the cancellation takes over the coordination of further actions and is called the orchestrator.
+
+### Timer control
+
+Timer creation and deletion functions can be called from any Lua code.
+This could be lua-init, lua-desync, or a timer function. A timer function can also act on itself, such as changing the period or terminating its own calls.
+
+Timers are identified by a name. Multiple timers with different names can call the same timer function.
+It will be passed the timer name and arbitrary data as parameters (#timer-function-prototype)
+
+#### timer_set
+
+Create or replace the timer.
+
+```
+function timer_set(name, func, period, oneshot, data)
+```
+
+* name - a unique timer name. If a timer with this name already exists, it is deleted and replaced with a new one. When replaced, the countdown restarts.
+* func - the timer function name (string)
+* period - the timer call frequency in milliseconds
+* oneshot - a bool indicating whether the timer is single-shot (true) or periodic (false)
+* data - an arbitrary variable passed to the [timer-function](#timer-function-prototype)
+
+#### timer_del
+
+Delete the timer.
+
+```
+function timer_del(name)
+```
+
+#### timer_info
+
+Get information about the timer identified by name.
+
+```
+function timer_info(name)
+```
+
+Returns table in case of success, nil otherwise.
+
+
+| Field   | Type   | Description  |
+| :------ | :----- | :------------------ |
+| name    | string | unique timer name |
+| func    | string | timer function name |
+| oneshot | bool   | true = single shot timer, false = periodic timer |
+| period  | number | timer period in msec |
+| fires   | number | number of timer calls made |
+
+
+#### timer_enum
+
+Get an array of unique names of all existing timers.
+
+```
+function timer_enum()
+```
+
+
 
 # zapret-lib.lua base function library
 
@@ -3180,12 +3295,12 @@ function host_or_ip(desync)
 ```
 function is_absolute_path(path)
 function append_path(path, file)
-function writeable_file_name(filename)
+function writeble_file_name(filename)
 ```
 
 - `is_absolute_path` returns true if the path starts from the root. It accounts for CYGWIN path specifics.
 - `append_path` appends a file or directory name `file` to `path`, using '/' as a separator.
-- `writeable_file_name` returns `filename` if it contains an absolute path or if the `WRITEABLE` environment variable is not set. Otherwise, it retrieves the path from the `WRITEABLE` environment variable and appends the `filename` using `append_path`.
+- `writeble_file_name` returns `filename` if it contains an absolute path or if the `WRITABLE` environment variable is not set. Otherwise, it retrieves the path from the `WRITABLE` environment variable and appends the `filename` using `append_path`.
 
 ## Reading and writing Files
 
@@ -3489,6 +3604,23 @@ function replay_drop(desync)
 
 These functions work correctly with both [replays](#handling-multi-packet-payloads) and regular dissects. For regular dissects, `replay_first` is always true, `replay_drop_set` does not change the flag, and `replay_drop` is always false.
 
+## Timer helpers
+
+```
+function dis_timer_name(dis)
+```
+
+Construct timer name based on ip src and dst addresses, l4 protocol name, port numbers or icmp codes.
+May not be unique.
+
+```
+function desync_timer_name(desync)
+```
+
+Construct timer name that includes dis_timer_name result + conntrack packet number.
+If track is absent random characters are added to the end.
+This name can be considered unique per desync and can be used as an oneshot timer name.
+
 ## Orchestration
 
 This group includes functions that support the orchestration and shimming processes.
@@ -3523,7 +3655,8 @@ Checks the [instance cutoff](#instance_cutoff) state for `desync.func_instance` 
 function apply_arg_prefix(desync)
 ```
 
-Performs substitution of argument values from `desync.arg` that start with `%` and `#`.
+Performs substitution of argument values from `desync.arg` that start with `%`, `#`,  `\`.
+Multiple calls are safe but do not update desync.arg if blobs were changed.
 
 ### apply_execution_plan
 
@@ -3532,6 +3665,8 @@ function apply_execution_plan(desync, instance)
 ```
 
 Copies the instance identification and its arguments from an [execution plan](#execution_plan) `instance` into the desync object, thereby recreating the desync state as if the `instance` were called directly by C code.
+With one exception : apply_arg_prefix is not applied because args can refer a blob created by previous conditionally executed instances.
+
 The [execution plan](#execution_plan) is provided by the C function `execution_plan()` as an array of `instance` elements.
 
 ### verdict_aggregate
@@ -3546,10 +3681,16 @@ Aggregates verdicts v1 and v2. VERDICT_MODIFY overrides VERDICT_PASS, while VERD
 
 ```
 function plan_instance_execute(desync, verdict, instance)
+function plan_instance_execute_preapplied(desync, verdict, instance)
 ```
 
 Executes an [execution plan](#execution_plan) `instance`, taking into account the [instance cutoff](#instance_cutoff) and standard [payload](#in-profile-filters) and [range](#in-profile-filters) filters.
+Calls apply_arg_prefix right before calling the instance.
 Returns the aggregation of the current verdict and the `instance` verdict.
+
+The "preapplied" version does not apply execution plan, allowing the calling code to do so.
+Sometimes, to decide whether to call an instance, you need a desync table configured for the called instance.
+"preapplied" version allows to avoid double copying.
 
 ### plan_instance_pop
 
@@ -3562,10 +3703,10 @@ Retrieves, removes, and returns the first element of the [execution plan](#execu
 ### plan_clear
 
 ```
-function plan_clear(desync)
+function plan_clear(desync, max)
 ```
 
-Clears the [execution plan](#execution_plan) in `desync.plan` by removing all `instance` elements.
+Clears up to the "max" instances if "max" is defined or the whole [execution plan](#execution_plan) in `desync.plan`.
 
 ### orchestrate
 
@@ -3579,10 +3720,10 @@ If `ctx=nil`, it does nothing, assuming the plan is already in `desync.plan`.
 ### replay_execution_plan
 
 ```
-function replay_execution_plan(desync)
+function replay_execution_plan(desync, max)
 ```
 
-Executes the entire [execution plan](#execution_plan) from `desync.plan`, respecting the [instance cutoff](#instance_cutoff) and standard [payload](#in-profile-filters) and [range](#in-profile-filters) filters.
+Executes up to the "max" instances if "max" is defined, or the entire [execution plan](#execution_plan) from `desync.plan`, respecting the [instance cutoff](#instance_cutoff) and standard [payload](#in-profile-filters) and [range](#in-profile-filters) filters.
 
 # zapret-antidpi.lua DPI attack program library
 
@@ -3644,9 +3785,14 @@ function send(ctx, desync)
 - arg: [standard ipfrag](#standard-ipfrag)
 - arg: [standard reconstruct](#standard-reconstruct)
 - arg: [standard rawsend](#standard-rawsend)
+- arg: delay - packet send delay in msec
 - Default `ip_id` mode is `none`.
 
 Sends the current dissect with optional modifications applied.
+If delay is specified packet data and send options are remembered. After specified time packet is sent out.
+
+The function returns VERDICT_PASS - the sending of the current dissect is not canceled. If you want to cancel, use the [drop](#drop) instance.
+
 
 ### pktmod
 
@@ -4380,13 +4526,26 @@ function condition(ctx, desync)
 
 - arg: `iff` - name of the [iff function](#iff-functions)
 - arg: `neg` - invert the `iff` value; defaults to `false`
+- arg: `instances` - how many following instances to execute conditionally. all if not defined.
 
 `condition` calls `iff`. If `iff xor neg = true`, all instances in the `plan` are executed; otherwise, the plan is cleared.
+
+### per_instance_condition
+
+```
+function per_instance_condition(ctx, desync)
+```
+
+- arg: `instances` - how many following instances to execute conditionally. all if not defined.
+
+All following instanced are called only if they have "cond" argument with the "iff" function name and it returns true. The "cond_neg" argument inverts "cond" result.
+Names are not iff/neg to avoid conflict with other orchestrators.
+
 
 ### stopif
 
 ```
-function condition(ctx, desync)
+function stopif(ctx, desync)
 ```
 
 - arg: `iff` - name of the [iff function](#iff-functions)
@@ -4437,6 +4596,23 @@ function cond_payload_str(desync)
 
 Returns `true` if the substring `pattern` is present in `desync.dis.payload`.
 This is a basic signature detector. If the C code does not recognize the protocol you need, you can write your own signature detector and run subsequent instances under a `condition` orchestrator using your detector as the `iff` function.
+
+#### cond_tcp_has_ts
+
+```
+function cond_tcp_ts(desync)
+```
+
+Returns `true` if the dissect is tcp and has tcp timestamp option.
+
+#### cond_lua
+
+```
+function cond_lua(desync)
+```
+
+Executes a Lua code from the "cond_code" argument. The code returns condition value. Direct addressing of the desync table is possible within the code.
+desync.arg is passed without called "apply_arg_prefix" : `%`, `#`, `\` remain as is without substitution because can refer blobs created by previous conditionally executed instances.
 
 
 # Auxiliary programs
@@ -5166,6 +5342,15 @@ ipt_first_packets()
 ```
 
 Outputs to stdout: `-m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes $RANGE`. `RANGE` is defined as "1:$1". If `$1` is "keepalive", nothing is output (no connbytes filter).
+
+```
+ipt_port_ipset()
+# $1 - ipset name
+# $2 - comma separated port or port range list. ranges are port1-port2
+```
+
+Creates "bitmap:port" ipset filled with the supplied port list. If the set already exists it's elements are replaced.
+
 
 ##### Working with nftables
 

@@ -7,6 +7,7 @@
 #include "protocol.h"
 #include "helpers.h"
 #include "sec.h"
+#include "timer.h"
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -23,7 +24,8 @@
 
 #define RAW_SNDBUF	(64*1024)	// in bytes
 
-#define Q_MAXLEN	1024		// in packets
+#define Q_MAXLEN	4096		// in packets
+#define Q_RCVBUF	(1024*1024)	// in bytes
 
 #define HOSTLIST_AUTO_FAIL_THRESHOLD_DEFAULT	3
 #define	HOSTLIST_AUTO_FAIL_TIME_DEFAULT 	60
@@ -188,10 +190,13 @@ struct params_s
 	uint64_t payload_disable;
 
 	struct str_list_head lua_init_scripts;
-	bool writeable_dir_enable;
-	char writeable_dir[PATH_MAX];
+	bool writable_dir_enable;
+	char writable_dir[PATH_MAX];
 
-	int lua_gc;
+	timer_pool *timers;
+	bool timers_dirty; // changed something in timers
+
+	uint64_t lua_gc;
 	int ref_desync_ctx; // desync ctx userdata registry ref
 	lua_State *L;
 };

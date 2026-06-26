@@ -11,36 +11,42 @@ static bool addpool(ipset *ips, char **s, const char *end, int *ct)
 	struct cidr4 c4;
 	struct cidr6 c6;
 
-	for (p=*s; p<end && *p && *p!=' ' && *p!='\t' && *p!='\r' && *p != '\n'; p++);
-
-	// comment line
-	if (!(**s == '#' || **s == ';' || **s == '/' || **s == '\r' || **s == '\n' ))
+	for (p=*s; p<end && (*p==' ' || *p=='\t') ; p++);
+	if (p<end)
 	{
-		l = p-*s;
-		if (l>=sizeof(cidr)) l=sizeof(cidr)-1;
-		memcpy(cidr,*s,l);
-		cidr[l]=0;
+		// comment line
+		if (!(*p == '#' || *p == ';' || *p == '/' || *p == '\r' || *p == '\n' ))
+		{
+			*s=p;
+			// advance to the token's end
+			for (; p<end && *p && *p!=' ' && *p!='\t' && *p!='\r' && *p != '\n'; p++);
 
-		if (parse_cidr4(cidr,&c4))
-		{
-			if (!ipset4AddCidr(&ips->ips4, &c4))
+			l = p-*s;
+			if (l>=sizeof(cidr)) l=sizeof(cidr)-1;
+			memcpy(cidr,*s,l);
+			cidr[l]=0;
+
+			if (parse_cidr4(cidr,&c4))
 			{
-				ipsetDestroy(ips);
-				return false;
+				if (!ipset4AddCidr(&ips->ips4, &c4))
+				{
+					ipsetDestroy(ips);
+					return false;
+				}
+				if (ct) (*ct)++;
 			}
-			if (ct) (*ct)++;
-		}
-		else if (parse_cidr6(cidr,&c6))
-		{
-			if (!ipset6AddCidr(&ips->ips6, &c6))
+			else if (parse_cidr6(cidr,&c6))
 			{
-				ipsetDestroy(ips);
-				return false;
+				if (!ipset6AddCidr(&ips->ips6, &c6))
+				{
+					ipsetDestroy(ips);
+					return false;
+				}
+				if (ct) (*ct)++;
 			}
-			if (ct) (*ct)++;
+			else
+				DLOG_ERR("bad ip or subnet : %s\n",cidr);
 		}
-		else
-			DLOG_ERR("bad ip or subnet : %s\n",cidr);
 	}
 
 	// skip remaining non-eol chars
@@ -77,22 +83,25 @@ static bool AppendIpset(ipset *ips, const char *filename)
 	{
 		r = z_readfile(F,&zbuf,&zsize,0);
 		fclose(F);
-		if (r==Z_OK)
+		if (r==Z_STREAM_END)
 		{
 			DLOG_CONDUP("zlib compression detected. uncompressed size : %zu\n", zsize);
 
-			p = zbuf;
-			e = zbuf + zsize;
-			while(p<e)
+			if (zbuf)
 			{
-				if (!addpool(ips,&p,e,&ct))
+				p = zbuf;
+				e = zbuf + zsize;
+				while(p<e)
 				{
-					DLOG_ERR("Not enough memory to store ipset : %s\n", filename);
-					free(zbuf);
-					return false;
+					if (!addpool(ips,&p,e,&ct))
+					{
+						DLOG_ERR("Not enough memory to store ipset : %s\n", filename);
+						free(zbuf);
+						return false;
+					}
 				}
+				free(zbuf);
 			}
-			free(zbuf);
 		}
 		else
 		{
@@ -104,7 +113,7 @@ static bool AppendIpset(ipset *ips, const char *filename)
 	{
 		DLOG_CONDUP("loading plain text list\n");
 
-		while (fgets(s, sizeof(s)-1, F))
+		while (fgets_safe(s, sizeof(s)-1, F))
 		{
 			p = s;
 			if (!addpool(ips,&p,p+strlen(p),&ct))
@@ -113,6 +122,12 @@ static bool AppendIpset(ipset *ips, const char *filename)
 				fclose(F);
 				return false;
 			}
+		}
+		if (ferror(F))
+		{
+			DLOG_PERROR("AppendIpset");
+			fclose(F);
+			return false;
 		}
 		fclose(F);
 	}
@@ -176,7 +191,7 @@ bool LoadAllIpsets()
 
 static bool SearchIpset(const ipset *ips, const struct in_addr *ipv4, const struct in6_addr *ipv6)
 {
-	char s_ip[40];
+	char s_ip[INET6_ADDRSTRLEN];
 	bool bInSet=false;
 
 	if (!!ipv4 != !!ipv6)
@@ -272,12 +287,15 @@ bool IpsetCheck(
 static struct ipset_file *RegisterIpset_(struct ipset_files_head *ipsets, struct ipset_collection_head *ips_collection, const char *filename)
 {
 	struct ipset_file *hfile;
+	char pabs[PATH_MAX];
+
 	if (filename)
 	{
-		if (!(hfile=ipset_files_search(ipsets, filename)))
-			if (!(hfile=ipset_files_add(ipsets, filename)))
+		if (!realpath(filename,pabs)) return NULL;
+		if (!(hfile=ipset_files_search(ipsets, pabs)))
+			if (!(hfile=ipset_files_add(ipsets, pabs)))
 				return NULL;
-		if (!ipset_collection_search(ips_collection, filename))
+		if (!ipset_collection_search(ips_collection, pabs))
 			if (!ipset_collection_add(ips_collection, hfile))
 				return NULL;
 	}

@@ -31,13 +31,15 @@
     - [Передача блобов](#передача-блобов)
     - [Внутрипрофильные фильтры](#внутрипрофильные-фильтры)
     - [Типичная схема вызова инстансов внутри профиля](#типичная-схема-вызова-инстансов-внутри-профиля)
-  - [Прототип Lua функции](#прототип-lua-функции)
+  - [Прототип Lua desync функции](#прототип-lua-desync-функции)
     - [Структура таблицы desync](#структура-таблицы-desync)
     - [Структура диссекта](#структура-диссекта)
     - [Особенности приема многопакетных пейлоадов](#особенности-приема-многопакетных-пейлоадов)
     - [Структура track](#структура-track)
       - [Особенности обработки icmp](#особенности-обработки-icmp)
       - [Особенности обработки raw ip](#особенности-обработки-raw-ip)
+  - [Таймеры](#таймеры)
+    - [Прототип функции таймера](#прототип-функции-таймера)
 - [С интерфейс nfqws2](#с-интерфейс-nfqws2)
   - [Базовые константы](#базовые-константы)
   - [Стандартные блобы](#стандартные-блобы)
@@ -56,21 +58,21 @@
     - [Генерация случайных данных](#генерация-случайных-данных)
       - [brandom](#brandom)
     - [Парсинг](#парсинг)
-      - [parse\_hex](#parse_hex)
+      - [parse_hex](#parse_hex)
     - [Криптография](#криптография)
       - [bcryptorandom](#bcryptorandom)
       - [bxor,bor,band](#bxorborband)
       - [hash](#hash)
       - [aes](#aes)
-      - [aes\_gcm](#aes_gcm)
-      - [aes\_ctr](#aes_ctr)
+      - [aes_gcm](#aes_gcm)
+      - [aes_ctr](#aes_ctr)
       - [hkdf](#hkdf)
     - [Компрессия](#компрессия)
       - [gunzip](#gunzip)
       - [gzip](#gzip)
     - [Системные функции](#системные-функции)
       - [uname](#uname)
-      - [clock\_gettime](#clock_gettime)
+      - [clock_gettime](#clock_gettime)
       - [getpid](#getpid)
       - [stat](#stat)
       - [time](#time)
@@ -79,23 +81,28 @@
       - [standard rawsend](#standard-rawsend)
     - [Диссекция и реконструкция](#диссекция-и-реконструкция)
       - [dissect](#dissect)
-      - [reconstruct\_dissect](#reconstruct_dissect)
-      - [reconstruct\_hdr](#reconstruct_hdr)
-      - [csum\_fix](#csum_fix)
+      - [reconstruct_dissect](#reconstruct_dissect)
+      - [reconstruct_hdr](#reconstruct_hdr)
+      - [csum_fix](#csum_fix)
     - [conntrack](#conntrack)
     - [Получение ip адресов](#получение-ip-адресов)
     - [Прием и отсылка пакетов](#прием-и-отсылка-пакетов)
       - [rawsend](#rawsend)
-      - [raw\_packet](#raw_packet)
+      - [raw_packet](#raw_packet)
     - [Работа с пейлоадами](#работа-с-пейлоадами)
       - [маркеры](#маркеры)
-      - [resolve\_pos](#resolve_pos)
-      - [tls\_mod](#tls_mod)
+      - [resolve_pos](#resolve_pos)
+      - [tls_mod](#tls_mod)
     - [Управление выполнением инстансов](#управление-выполнением-инстансов)
-      - [instance\_cutoff](#instance_cutoff)
-      - [lua\_cutoff](#lua_cutoff)
-      - [execution\_plan](#execution_plan)
-      - [execution\_plan\_cancel](#execution_plan_cancel)
+      - [instance_cutoff](#instance_cutoff)
+      - [lua_cutoff](#lua_cutoff)
+      - [execution_plan](#execution_plan)
+      - [execution_plan_cancel](#execution_plan_cancel)
+    - [Управление таймерами](#управление-таймерами)
+      - [timer_set](#timer_set)
+      - [timer_del](#timer_del)
+      - [timer_info](#timer_info)
+      - [timer_enum](#timer_enum)
 - [Библиотека базовых функций zapret-lib.lua](#библиотека-базовых-функций-zapret-liblua)
   - [Базовые desync функции](#базовые-desync-функции)
     - [luaexec](#luaexec)
@@ -103,16 +110,16 @@
     - [pktdebug](#pktdebug)
     - [argdebug](#argdebug)
     - [posdebug](#posdebug)
-    - [detect\_payload\_str](#detect_payload_str)
-    - [desync\_orchestrator\_example](#desync_orchestrator_example)
+    - [detect_payload_str](#detect_payload_str)
+    - [desync_orchestrator_example](#desync_orchestrator_example)
   - [Служебные функции](#служебные-функции)
-    - [var\_debug](#var_debug)
+    - [var_debug](#var_debug)
     - [deepcopy](#deepcopy)
-    - [logical\_xor](#logical_xor)
-    - [array\_search](#array_search)
+    - [logical_xor](#logical_xor)
+    - [array_search](#array_search)
   - [Работа со строками](#работа-со-строками)
-    - [in\_list](#in_list)
-    - [find\_next\_line](#find_next_line)
+    - [in_list](#in_list)
+    - [find_next_line](#find_next_line)
   - [Обслуживание raw string](#обслуживание-raw-string)
     - [hex](#hex)
     - [pattern](#pattern)
@@ -120,18 +127,18 @@
   - [Обслуживание tcp sequence numbers](#обслуживание-tcp-sequence-numbers)
   - [Обслуживание позиций](#обслуживание-позиций)
   - [Диссекция](#диссекция)
-    - [dissect\_url](#dissect_url)
-    - [dissect\_nld](#dissect_nld)
-    - [dissect\_http](#dissect_http)
-    - [dissect\_tls](#dissect_tls)
+    - [dissect_url](#dissect_url)
+    - [dissect_nld](#dissect_nld)
+    - [dissect_http](#dissect_http)
+    - [dissect_tls](#dissect_tls)
   - [Работа с элементами L3 и L4 протоколов](#работа-с-элементами-l3-и-l4-протоколов)
-    - [find\_tcp\_options](#find_tcp_options)
+    - [find_tcp_options](#find_tcp_options)
     - [ip6hdr](#ip6hdr)
     - [ip protocol](#ip-protocol)
-    - [packet\_len](#packet_len)
+    - [packet_len](#packet_len)
   - [Работа с именами хостов](#работа-с-именами-хостов)
     - [genhost](#genhost)
-    - [host\_ip](#host_ip)
+    - [host_ip](#host_ip)
   - [Операции с именами файлов и путями](#операции-с-именами-файлов-и-путями)
   - [Чтение и запись файлов](#чтение-и-запись-файлов)
   - [Компрессия данных](#компрессия-данных)
@@ -140,29 +147,30 @@
     - [standard ipid](#standard-ipid)
     - [standard fooling](#standard-fooling)
     - [standard ipfrag](#standard-ipfrag)
-    - [apply\_ip\_id](#apply_ip_id)
-    - [apply\_fooling](#apply_fooling)
+    - [apply_ip_id](#apply_ip_id)
+    - [apply_fooling](#apply_fooling)
     - [ipfrag2](#ipfrag2)
-    - [wssize\_rewrite](#wssize_rewrite)
-    - [dis\_reverse](#dis_reverse)
+    - [wssize_rewrite](#wssize_rewrite)
+    - [dis_reverse](#dis_reverse)
   - [IP адреса и интерфейсы](#ip-адреса-и-интерфейсы)
   - [Отсылка](#отсылка)
-    - [rawsend\_dissect\_ipfrag](#rawsend_dissect_ipfrag)
-    - [rawsend\_dissect\_segmented](#rawsend_dissect_segmented)
-    - [rawsend\_payload\_segmented](#rawsend_payload_segmented)
+    - [rawsend_dissect_ipfrag](#rawsend_dissect_ipfrag)
+    - [rawsend_dissect_segmented](#rawsend_dissect_segmented)
+    - [rawsend_payload_segmented](#rawsend_payload_segmented)
   - [Стандартные фильтры direction и payload](#стандартные-фильтры-direction-и-payload)
   - [Работа с многопакетными пейлоадам](#работа-с-многопакетными-пейлоадам)
+  - [Помощь с таймерами](#помощь-с-таймерами)
   - [Оркестрация](#оркестрация)
-    - [instance\_cutoff\_shim](#instance_cutoff_shim)
-    - [cutoff\_shim\_check](#cutoff_shim_check)
-    - [apply\_arg\_prefix](#apply_arg_prefix)
-    - [apply\_execution\_plan](#apply_execution_plan)
-    - [verdict\_aggregate](#verdict_aggregate)
-    - [plan\_instance\_execute](#plan_instance_execute)
-    - [plan\_instance\_pop](#plan_instance_pop)
-    - [plan\_clear](#plan_clear)
+    - [instance_cutoff_shim](#instance_cutoff_shim)
+    - [cutoff_shim_check](#cutoff_shim_check)
+    - [apply_arg_prefix](#apply_arg_prefix)
+    - [apply_execution_plan](#apply_execution_plan)
+    - [verdict_aggregate](#verdict_aggregate)
+    - [plan_instance_execute](#plan_instance_execute)
+    - [plan_instance_pop](#plan_instance_pop)
+    - [plan_clear](#plan_clear)
     - [orchestrate](#orchestrate)
-    - [replay\_execution\_plan](#replay_execution_plan)
+    - [replay_execution_plan](#replay_execution_plan)
 - [Библиотека программ атаки на DPI zapret-antidpi.lua](#библиотека-программ-атаки-на-dpi-zapret-antidpilua)
   - [Стандартные наборы параметров](#стандартные-наборы-параметров)
     - [standard direction](#standard-direction)
@@ -172,22 +180,22 @@
     - [send](#send)
     - [pktmod](#pktmod)
   - [Дурение http](#дурение-http)
-    - [http\_hostcase](#http_hostcase)
-    - [http\_domcase](#http_domcase)
-    - [http\_methodeol](#http_methodeol)
-    - [http\_unixeol](#http_unixeol)
+    - [http_hostcase](#http_hostcase)
+    - [http_domcase](#http_domcase)
+    - [http_methodeol](#http_methodeol)
+    - [http_unixeol](#http_unixeol)
   - [Замена window size](#замена-window-size)
     - [wsize](#wsize)
     - [wssize](#wssize)
   - [Фейки](#фейки)
     - [syndata](#syndata)
-    - [tls\_client\_hello\_clone](#tls_client_hello_clone)
+    - [tls_client_hello_clone](#tls_client_hello_clone)
     - [fake](#fake)
     - [rst](#rst)
   - [TCP сегментация](#tcp-сегментация)
     - [multisplit](#multisplit)
     - [multidisorder](#multidisorder)
-    - [multidisorder\_legacy](#multidisorder_legacy)
+    - [multidisorder_legacy](#multidisorder_legacy)
     - [fakedsplit](#fakedsplit)
     - [fakeddisorder](#fakeddisorder)
     - [hostfakesplit](#hostfakesplit)
@@ -195,32 +203,35 @@
     - [oob](#oob)
   - [Дурение udp](#дурение-udp)
     - [udplen](#udplen)
-    - [dht\_dn](#dht_dn)
+    - [dht_dn](#dht_dn)
   - [Другие функции](#другие-функции)
     - [synack](#synack)
-    - [synack\_split](#synack_split)
+    - [synack_split](#synack_split)
 - [Библиотека программ автоматизации и оркестрации zapret-auto.lua](#библиотека-программ-автоматизации-и-оркестрации-zapret-autolua)
   - [Хранилище состояний](#хранилище-состояний)
-    - [automate\_conn\_record](#automate_conn_record)
-    - [standard\_hostkey](#standard_hostkey)
-    - [automate\_host\_record](#automate_host_record)
+    - [automate_conn_record](#automate_conn_record)
+    - [standard_hostkey](#standard_hostkey)
+    - [automate_host_record](#automate_host_record)
   - [Обслуживание удач и неудач](#обслуживание-удач-и-неудач)
-    - [automate\_failure\_counter](#automate_failure_counter)
-    - [automate\_failure\_counter\_reset](#automate_failure_counter_reset)
+    - [automate_failure_counter](#automate_failure_counter)
+    - [automate_failure_counter_reset](#automate_failure_counter_reset)
   - [Детекция удач и неудач](#детекция-удач-и-неудач)
-    - [automate\_failure\_check](#automate_failure_check)
-    - [standard\_success\_detector](#standard_success_detector)
-    - [standard\_failure\_detector](#standard_failure_detector)
+    - [automate_failure_check](#automate_failure_check)
+    - [standard_success_detector](#standard_success_detector)
+    - [standard_failure_detector](#standard_failure_detector)
   - [Оркестраторы](#оркестраторы)
     - [circular](#circular)
     - [repeater](#repeater)
     - [condition](#condition)
+    - [per_instance_condition](#per_instance_condition)
     - [stopif](#stopif)
     - [iff функции](#iff-функции)
-      - [cond\_true](#cond_true)
-      - [cond\_false](#cond_false)
-      - [cond\_random](#cond_random)
-      - [cond\_payload\_str](#cond_payload_str)
+      - [cond_true](#cond_true)
+      - [cond_false](#cond_false)
+      - [cond_random](#cond_random)
+      - [cond_payload_str](#cond_payload_str)
+      - [cond_tcp_has_ts](#cond_tcp_has_ts)
+      - [cond_lua](#cond_lua)
 - [Вспомогательные программы](#вспомогательные-программы)
   - [ip2net](#ip2net)
   - [mdig](#mdig)
@@ -244,16 +255,16 @@
   - [Система ведения листов](#система-ведения-листов)
     - [Стандартные файлы листов](#стандартные-файлы-листов)
     - [Скрипты ipset](#скрипты-ipset)
-      - [clear\_lists.sh](#clear_listssh)
-      - [create\_ipset.sh](#create_ipsetsh)
-      - [get\_config.sh](#get_configsh)
-      - [get\_user.sh](#get_usersh)
-      - [get\_ipban.sh](#get_ipbansh)
-      - [get\_exclude.sh](#get_excludesh)
-      - [get\_antifilter\_\*.sh](#get_antifilter_sh)
-      - [get\_antizapret\_domains.sh](#get_antizapret_domainssh)
-      - [get\_refilter\_\*.sh](#get_refilter_sh)
-      - [get\_reestr\_\*.sh](#get_reestr_sh)
+      - [clear_lists.sh](#clear_listssh)
+      - [create_ipset.sh](#create_ipsetsh)
+      - [get_config.sh](#get_configsh)
+      - [get_user.sh](#get_usersh)
+      - [get_ipban.sh](#get_ipbansh)
+      - [get_exclude.sh](#get_excludesh)
+      - [get_antifilter_*.sh](#get_antifilter_sh)
+      - [get_antizapret_domains.sh](#get_antizapret_domainssh)
+      - [get_refilter_*.sh](#get_refilter_sh)
+      - [get_reestr_*.sh](#get_reestr_sh)
     - [Система ipban](#система-ipban)
   - [Стартовые скрипты](#стартовые-скрипты)
     - [Интеграция с firewall](#интеграция-с-firewall)
@@ -361,7 +372,7 @@ conntrack отслеживает логическое направление п�
 позволяющих задать диапазон позиций внутри потока, который интересен для инстанса. Внутрипрофильные фильтры после их определения действуют на все последующие инстансы
 до их переопределения. Главный смысл наличия внутрипрофильных фильтров - сократить число относительно медленных вызовов Lua , принимая максимум решений на стороне C кода.
 
-Пакет пришел в Lua инстанс. Функция имеет 2 [параметра](#прототип-lua-функции) - ctx и desync. ctx - это контекст для связи с некоторыми функциями на стороне C кода.
+Пакет пришел в Lua инстанс. Функция имеет 2 [параметра](#прототип-lua-desync-функции) - ctx и desync. ctx - это контекст для связи с некоторыми функциями на стороне C кода.
 [desync](#структура-таблицы-desync) - таблица, содержащая множество параметров обрабатываемого пакета. Прежде всего это [диссект](#структура-диссекта) - подтаблица `dis`.
 Информация из записи conntrack - [подтаблица track](#структура-track). Еще целый ряд параметров, который можно увидеть, выполнив [var_debug(desync)](#var_debug) или просто вызвав готовый инстанс [pktdebug](#pktdebug).
 
@@ -693,6 +704,7 @@ nfqws2 использует стандартный парсер getopt_long_only
  --comment=any_text                                     ; любой текст. игнорируется
  --intercept=0|1                                        ; разрешить перехват. 0 - нет, 1 - да. при 0 выполняются lua-init скрипты и процесс завершается, перехват не включается, очередь NFQUEUE не инициализируется
  --daemon                                               ; отключиться от консоли (демонизироваться)
+ --chdir[=path]                                         ; сменить текущую директорию. если нет path, выбирается путь исполняемого файла - EXEDIR
  --pidfile=<filename>                                   ; запись PID в файл
  --ctrack-timeouts=S:E:F[:U]                            ; таймауты conntrack для стадий tcp SYN, ESTABLISHED, FIN и для udp
  --ctrack-disable=[0|1]                                 ; 1 отключает conntrack
@@ -703,7 +715,7 @@ nfqws2 использует стандартный парсер getopt_long_only
  --reasm-disable=[type[,type]]                          ; отключить сборку фрагментов для списка пейлоадов : tls_client_hello quic_initial . без аргумента - отключить reasm для всего.
 
 DESYNC ENGINE INIT:
- --writeable[=<dir_name>]                               ; создать директорию для Lua с разрешением записи и поместить путь к ней в переменную env "WRITEABLE" (только одна директория)
+ --writable[=<dir_name>]                                ; создать директорию для Lua с разрешением записи и поместить путь к ней в переменную env "WRITABLE" (только одна директория)
  --blob=<item_name>:[+ofs]@<filename>|0xHEX             ; загрузить бинарный файл или hex строку в переменную Lua <item_name>. +ofs задает смещение от начала файла
  --lua-init=@<filename>|<lua_text>                      ; однократно при старте выполнить Lua код из строки или из файла. поддерживаются сжатые gzip файлы. автоматически проверяется "<filename>.gz"
  --lua-gc=<int>                                         ; интервал вызова сборщика мусора Lua в секундах. 0 отключает периодический вызов.
@@ -1127,8 +1139,8 @@ Windows :
 - Безвозвратно убираются все Se* привилегии из токена, кроме SeChangeNotifyPrivilege.
 - С помощью Job запрещается создание дочерних процессов и ограничивается взаимодействие с десктопом - clipboard, change desktop, change display settings и тд
 
-Есть простой способ передать Lua коду каталог, доступный на запись - параметр `--writeable[=<dirname>]`.
-nfqws2 создает каталог, назначает на него такие права, чтобы Lua код смог писать туда файлы, передает имя директории в переменной env `WRITEABLE`.
+Есть простой способ передать Lua коду каталог, доступный на запись - параметр `--writable[=<dirname>]`.
+nfqws2 создает каталог, назначает на него такие права, чтобы Lua код смог писать туда файлы, передает имя директории в переменной env `WRITABLE`.
 Если dirname не задан, на Windows создается каталог внутри `%USERPROFILE%/AppData/LocalLow`
 
 Со стороны Lua убираются опасные функции - os.execute, io.popen, package.loadlib и модуль debug.
@@ -1136,7 +1148,7 @@ nfqws2 создает каталог, назначает на него таки�
 
 ## Вызов Lua кода
 
-Lua код вызывается в 2 этапа.
+Lua код вызывается в 3 местах.
 
 1. Однократно при запуске программы через `--lua-init=code|@file`. Если значение параметра начинается с `@`, выполняется файл, иначе значение параметра является Lua кодом. Поддерживается сжатие файлов gzip. Сначала проверяется "file", потом "file.gz".
 2. При обработке профиля через `--lua-desync=function_name:arg1[=val1]:arg2[=val2]:argN[=valN]`.
@@ -1146,6 +1158,7 @@ Lua код вызывается в 2 этапа.
 `%var` подставляет значение переменной `desync.var` или `var`, если первая отсутствует.
 `#var` подставляет длину переменной `desync.var` или `var`, если первая отсутствует.
 Двоеточия и знаки `%`, `#` в начале могут быть эскейпнуты через `\`.
+3. При обработке таймеров
 
 И `--lua-init`, и `--lua-desync` может быть несколько. Выполнение производится строго в порядке указания.
 
@@ -1225,7 +1238,7 @@ nfqws2 следит за превышением верхней границы с
 - Строчка `--lua-desync=fake:blob=fake_default_tls:badsum:strategy=1` вызывает функцию `fake` с 3 аргументами : `blob`, `badsum`, `strategy`.
 Значением аргумента `badsum` является пустая строка.
 
-## Прототип Lua функции
+## Прототип Lua desync функции
 
 Стандартная Lua функция имеет прототип
 
@@ -1530,6 +1543,7 @@ ipv6 extension headers и tcp options представляются в форме
 | :------------ | :----- | :--------------------------------------------------------------- |
 | ip            | table  | заголовок ipv4                                                   |
 | ip6           | table  | заголовок ipv6                                                   |
+| frag_off      | number | смещение IP фрагмента. присутствует только в IP фрагментах.      |
 | tcp           | table  | заголовок tcp                                                    |
 | udp           | table  | заголовок udp                                                    |
 | icmp          | table  | заголовок icmp                                                   |
@@ -1726,6 +1740,49 @@ conntrack работает только с tcp и udp, он не ведет уч
 В диссекте выдаются поля ip, ip6, payload.  payload включает содержимое пакета после L3 заголовков.
 desync.track всегда отсутствует.
 
+## Таймеры
+
+Lua код может вызываться и вне привязки к принимаемым данным из сети.
+Источником события является время.
+Таймер - это обьект nfqws2, идентифицируемый по уникальному имени и позволяющий вызывать
+указанную Lua функцию с определенной периодичностью, либо однократно через какое-то время.
+Установкой таймера занимается функция [timer_set](#timer_set), удаляет таймер функция [timer_del](#timer_del).
+
+nfqws2 - программа однопоточная, как и движок Lua. Таймеры вызываются в контексте того же потока, что и обработка сетевых данных.
+В Linux и Windows пакеты принимаются не по одному, а блоками. Блок обрабатывается до полного исчерпания оставшихся пакетов.
+Таймеры вызываются между обработкой блоков. Если обработка заняла достаточно много времени, то вызов таймера может быть
+не идеальным по времени.
+
+Таймеры могут быть полезны для обработки ситуаций отсутствия реакции из сети на отсылаемые пакеты.
+Например, вам надо что-то куда-то послать и прочитать ответ. Но оппонент может и не ответить или ответ может не дойти.
+Чтобы ваша схема не подвисла в неопределенном состоянии и не оставила мусор в памяти, может помочь таймер.
+С помощью таймеров, desync функций и функций отсылки можно построить полноценную машину состояний - вплоть
+до собственной реализации tcp или иной системы гарантированной доставки.
+Проектировать схему нужно асинхронно в стиле конечного автомата. Прямые задержки sleep в коде не предусмотрены, поскольку ломают
+схему обработки трафика через очередь. Пока вы ждете - остальное повиснет.
+Другое возможное применение - различного рода задержки трафика. Запомнить, дропнуть, отослать через какое-то время.
+Без таймеров отсылать все придется сразу без задержки.
+
+В режиме `--intercept=0` при наличии таймеров nfqws2 не выходит сразу, а исправно вызывает таймеры, пока не останется ни одного.
+После этого процесс завершается.
+
+### Прототип функции таймера
+
+```
+function timer(name, data)
+```
+
+Таймер-функции может быть передана произвольная Lua переменная любого типа.
+Таблицу можно использовать для хранения состояния, привязанного к таймеру.
+Переменные простых типов могут односторонне передать какие-то read-only значения.
+data задается при запуске таймера через [timer_set](#timer_set).
+При удалении таймера переменная автоматически освобождается, если на нее нет других ссылок.
+
+Если таймер-функция вываливается с error, таймер удаляется принудительно.
+Долбежки по error не будет - таймер просто останавливается и перестает работать.
+Поэтому при разработке таймер функций особо важно не допускать варианты с error.
+
+Однократный таймер автоматически удаляется после вызова таймер-функции. Самостоятельно удалять не требуется, хотя это и допустимо.
 
 # С интерфейс nfqws2
 
@@ -1787,8 +1844,8 @@ desync.track всегда отсутствует.
 
 | env       | Назначение |
 | :-------- |:---------- |
-| WRITEABLE | Директория, доступная на запись Lua. Результат опции `--writeable` |
-| APPDATALOW | (только Windows) Расположение AppData для low mandatory level. Сюда тоже можно записывать, но предпочтительно использовать `--writeable` для кросс-платформенности. |
+| WRITABLE | Директория, доступная на запись Lua. Результат опции `--writable` |
+| APPDATALOW | (только Windows) Расположение AppData для low mandatory level. Сюда тоже можно записывать, но предпочтительно использовать `--writable` для кросс-платформенности. |
 
 ## C функции
 
@@ -2246,10 +2303,12 @@ function dissect(raw_ip)
 function reconstruct_dissect(dissect[, reconstruct_opts])
 ```
 
-Возвращает raw_ip. Все чексуммы считаются автоматически. L4 чексуммы портятся, если задан badsum в reconstruct_opts.
+Возвращает raw_ip. Все чексуммы считаются автоматически. L4 чексуммы портятся, если задан badsum в [reconstruct_opts](#standard-reconstruct).
 
-Реконструкция диссектов с IP фрагментацией происходит особым образом - с участием как Lua, так и C кода.
-Lua код должен подготовить диссект полного пакета, подлежащего фрагментации, но заполнить некоторые поля такими, какими они должны быть во фрагменте.
+Реконструкция диссектов с IP фрагментацией происходит особым образом. Есть 2 варианта.
+
+1. Если присутствует поле "frag_off", tcp/udp/icmp хедеры игнорируются, payload содержит raw ip payload. В таком виде приходят диссекты фрагментированных IP пакетов. nfqws2 не выполняет дефрагментацию на IP уровне. Но это очень настойчиво делают Linux системы - чтобы пришел фрагмент в nfqws2 надо сильно постараться, вставив в prerouting или output "notrack". Диссекты в таком виде могут быть реконструированы как есть. Но готовить их в Lua крайне неудобно, поскольку придется проходить через черную магию работы с бинарным представлением.
+2. Если поле "frag_off" отсутствует, реконструкция фрагментов выполняется из диссекта целого пакета с участием как Lua, так и C кода. Lua код должен подготовить диссект полного пакета, подлежащего фрагментации, но заполнить некоторые поля такими, какими они должны быть во фрагменте.
 
 - ipv4 : ip.ip_len должен быть рассчитан таким, каким он должен быть во фрагменте.
 По ip.ip_len С код определяет размер фрагментированной части.
@@ -2481,6 +2540,7 @@ function execution_plan(ctx)
 | range          | table  | эффективный диапазон [счетчиков](#внутрипрофильные-фильтры) `--in-range` или `--out-range` в зависимости от текущего направления |
 | payload        | table  | эффективный фильтр payload . таблица с индексами - названиями типа пейлоада                                                  |
 | payload_filter | string | эффективный фильтр payload . список названий пейлоадов через запятую (иное представление payload)                            |
+| arg            | table  | аргументы инстанса |
 
 **range**
 
@@ -2505,6 +2565,66 @@ function execution_plan_cancel(ctx)
 
 Однократная отмена выполнения всех следующих инстансов внутри профиля.
 Инстанс, выполняющий отмену, берет на себя координацию дальнейших действий и называется оркестратором.
+
+### Управление таймерами
+
+Функции создания и удаления таймера могут быть вызваны из любого Lua кода.
+Это может быть lua-init, lua-desync или таймер функция. Таймер функция может в том числе действовать в отношении себя самой -
+заменить период или прекратить собственные вызовы.
+
+Таймеры идентифицируются именем. Несколько таймеров с разными именами могут вызывать одну и ту же таймер-функцию.
+Ей будет [передано](#прототип-функции-таймера) имя таймера и произвольные данные в качестве параметров.
+
+#### timer_set
+
+Создать или заменить таймер.
+
+```
+function timer_set(name, func, period, oneshot, data)
+```
+
+* name - уникальное имя таймера. если таймер с таким именем уже есть, он удаляется и замещается новым. При замещении отсчет времени начинается заново.
+* func - имя таймер функции (string)
+* period - периодичность вызова таймера в миллисекундах
+* oneshot - bool признак является ли таймер однократным (true) или периодическим (false)
+* data - произвольная переменная, передаваемая [таймер-функции](#прототип-функции-таймера)
+
+#### timer_del
+
+Удалить таймер. Текущая функция не прерывается, но последующих вызовов не будет.
+
+```
+function timer_del(name)
+```
+
+#### timer_info
+
+Получить информацию о таймере.
+
+```
+function timer_info(name)
+```
+
+В случае успеха возвращается таблица, в случае неудачи - nil.
+
+
+| Поле    | Тип    | Описание            |
+| :------ | :----- | :------------------ |
+| name    | string | уникальное имя таймера |
+| func    | string | имя таймер функции |
+| oneshot | bool   | true = однократный таймер, false = периодический |
+| period  | number | период таймера в мсек |
+| fires   | number | количество выполненных вызовов таймера |
+
+
+#### timer_enum
+
+Получить массив уникальных имен всех существующих таймеров.
+
+```
+function timer_enum()
+```
+
 
 # Библиотека базовых функций zapret-lib.lua
 
@@ -3348,13 +3468,13 @@ function host_or_ip(desync)
 ```
 function is_absolute_path(path)
 function append_path(path,file)
-function writeable_file_name(filename)
+function writable_file_name(filename)
 ```
 
 - is_absolute_path возвращает true, если путь path начинается с корня. Учитываются особенности путей CYGWIN.
 - append_path дописывает имя файла или каталога file к пути path, разделяя их знаком '/'
-- writeable_file_name возвращает filename, если filename содержит абсолютный путь или env `WRITEABLE` отсутствует.
-Иначе берется путь из env `WRITEABLE` и к нему дописывается имя файла filename через append_path.
+- writable_file_name возвращает filename, если filename содержит абсолютный путь или env `WRITABLE` отсутствует.
+Иначе берется путь из env `WRITABLE` и к нему дописывается имя файла filename через append_path.
 
 ## Чтение и запись файлов
 
@@ -3663,6 +3783,24 @@ function replay_drop(desync)
 
 Функции работают корректно как с [реплеем](#особенности-приема-многопакетных-пейлоадов), так и обычными диссектами. Для обычных диссектов replay_first всегда true, replay_drop_set не меняет признак, replay_drop всегда false.
 
+## Помощь с таймерами
+
+```
+function dis_timer_name(dis)
+```
+
+Конструирует имя таймера, включающее в себя ip адреса src,dst, имя протокола l4, номера портов или icmp коды.
+Имя таймера может не быть уникальным.
+
+```
+function desync_timer_name(desync)
+```
+
+Конструирует имя таймера, включающее в себя результат dis_timer_name + номер пакета в conntrack по прямому направлению.
+Если track отсутствует, добавляются случайные символы.
+Имя таймера можно считать уникальным на desync, его можно использовать как oneshot timer name.
+
+
 ## Оркестрация
 
 В эту группу функций входят функции поддержки процесса оркестрации и прокладки.
@@ -3701,7 +3839,8 @@ function cutoff_shim_check(desync)
 function apply_arg_prefix(desync)
 ```
 
-Выполняет подстановку значений аргументов из desync.arg, начинающихся с `%` и `#`.
+Выполняет подстановку значений аргументов из desync.arg, начинающихся с `%` и `#`, `\`.
+Функция ставит специальную метку в desync.arg , чтобы избежать двойного разименования. Повторные вызовы безопасны, но не обновляют desync.arg при изменении блобов.
 
 ### apply_execution_plan
 
@@ -3711,6 +3850,8 @@ function apply_execution_plan(desync, instance)
 
 Копирует в desync идентификацию инстанса и его аргументы из элемента [execution plan](#execution_plan) `instance`,
 тем самым воссоздает состояние desync, как если бы `instance` был вызван напрямую C кодом.
+За одним исключением : apply_arg_prefix не применяется, поскольку может содержать несуществующие блоб, существование которого зависит от условного выполнения предыдущих истансов.
+
 [execution plan](#execution_plan) выдается C функцией `execution_plan()` как массив, элементами которого являются `instance`.
 
 ### verdict_aggregate
@@ -3725,10 +3866,16 @@ function verdict_aggregate(v1, v2)
 
 ```
 function plan_instance_execute(desync, verdict, instance)
+function plan_instance_execute_preapplied(desync, verdict, instance)
 ```
 
 Выполняет элемент [execution plan](#execution_plan) `instance` с учетом [instance cutoff](#instance_cutoff) и стандартных фильтров [payload](#внутрипрофильные-фильтры) и [range](#внутрипрофильные-фильтры).
+При совпадении условий непосредственно перед вызовом выполняет apply_arg_prefix.
 Возвращает агрегацию verdict и вердикта `instance`.
+
+Вариант "preapplied" не выполняет apply_execution_plan, позволяя это сделат вызывающему коду.
+Иногда для принятия решения вызывать ли instance требуется таблица desync, настроенная на вызываемый инстанс.
+Чтобы не делать apply дважды (там копирование desync.arg) и существует этот вариант.
 
 ### plan_instance_pop
 
@@ -3741,10 +3888,10 @@ function plan_instance_pop(desync)
 ### plan_clear
 
 ```
-function plan_clear(desync)
+function plan_clear(desync, max)
 ```
 
-Очищает [execution plan](#execution_plan) в desync.plan - удаляет все `instance`.
+Очищает первые max инстансов, если max задан, либо весь [execution plan](#execution_plan) в desync.plan.
 
 ### orchestrate
 
@@ -3758,10 +3905,10 @@ function orchestrate(ctx, desync)
 ### replay_execution_plan
 
 ```
-function replay_execution_plan(desync)
+function replay_execution_plan(desync, max)
 ```
 
-Выполняет весь [execution plan](#execution_plan) из desync.plan с учетом [instance cutoff](#instance_cutoff) и стандартных фильтров [payload](#внутрипрофильные-фильтры) и [range](#внутрипрофильные-фильтры).
+Выполняет max инстансов, если max задан, либо весь [execution plan](#execution_plan) из desync.plan с учетом [instance cutoff](#instance_cutoff) и стандартных фильтров [payload](#внутрипрофильные-фильтры) и [range](#внутрипрофильные-фильтры).
 
 # Библиотека программ атаки на DPI zapret-antidpi.lua
 
@@ -3823,9 +3970,18 @@ function send(ctx, desync)
 - arg: [standard ipfrag](#standard-ipfrag)
 - arg: [standard reconstruct](#standard-reconstruct)
 - arg: [standard rawsend](#standard-rawsend)
+- arg: delay - задержка отправки в мсек
 - режим ip_id по умолчанию - none
 
 Отсылает текущий диссект c опциональным применением модификаций.
+
+При наличии параметра delay данные пакета и опции отправки запоминаются. Спустя указанное время происходит отправка.
+Функция отсылки с delay реализована тривиальным образом через таймер с именем, уникальным для диссекта.
+Множественные send с delay не вызывают дополнительную отправку, вместо этого замещается предыдущая отправка.
+Если вам нужно задерживать несколько вариаций (например, результат tcp сегментации) и нужна очередь для отправки в строгом порядке,
+то вам нужно писать свою функцию - send не подойдет.
+
+Функция выносит VERDICT_PASS - отсылка текущего диссекта не отменяется. Если нужно отменить - используйте инстанс [drop](#drop).
 
 ### pktmod
 
@@ -4560,13 +4716,25 @@ function condition(ctx, desync)
 
 - arg: iff - имя [функции условия](#iff-функции)
 - arg: neg - инвертировать значение iff. по умолчанию - false
+- arg: instances - сколько последующих инстансов выполнять условно. все, если не задано.
 
 condition вызывает iff. если iff xor neg = true, выполняются все инстансы plan, иначе план очищается.
+
+### per_instance_condition
+
+```
+function per_instance_condition(ctx, desync)
+```
+
+- arg: instances - сколько последующих инстансов выполнять условно. все, если не задано.
+
+Все последующие инстансы вызываются только, если у них есть аргумент "cond", содержащий iff функцию, и она возвращает true. Аргумент "cond_neg" инвертирует ее значение.
+Имена аргументов не iff/neg, чтобы исключить конфликт с другими оркестраторами.
 
 ### stopif
 
 ```
-function condition(ctx, desync)
+function stopif(ctx, desync)
 ```
 
 - arg: iff - имя [функции условия](#iff-функции)
@@ -4617,6 +4785,23 @@ function cond_payload_str(desync)
 
 Возвращает true, если в desync.dis.payload присутствует подстрока pattern.
 Это простейший сигнатурый детектор. Если C код не распознает нужный вам протокол, вы можете написать свой сигнатурный детектор и запускать последующие инстансы под оркестратором condition с вашим детектором в качестве iff.
+
+#### cond_tcp_has_ts
+
+```
+function cond_tcp_ts(desync)
+```
+
+Возвращает true, если диссект является tcp и присутствует timestamp tcp option.
+
+#### cond_lua
+
+```
+function cond_lua(desync)
+```
+
+Выполняет Lua код из аргумента "cond_code". Код возвращает значение условия через return. Возможна прямая адресация таблицы desync.
+desync.arg передаются с НЕ разименованными `%`, `#`, `\`, поскольку разименование может ссылаться на блобы, создаваемые предыдущими условно вызываемыми инстансами.
 
 # Вспомогательные программы
 
@@ -5346,6 +5531,14 @@ ipt_first_packets()
 ```
 
 Выдает в stdout "-m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes $RANGE". RANGE определяется как "1:$1". Если $1 = "keepalive", не выдается ничего (нет фильтра по connbytes).
+
+```
+ipt_port_ipset()
+# $1 - имя ipset
+# $2 - список портов через запятую. диапазоны через "-"
+```
+
+Создает ipset типа bitamp:port со списком портов. Если ipset уже существует, заменяет в нем элементы.
 
 ##### Работа с nftables
 

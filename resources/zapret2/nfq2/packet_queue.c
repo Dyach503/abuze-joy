@@ -26,7 +26,14 @@ void rawpacket_queue_destroy(struct rawpacket_tailhead *q)
 	while((rp = rawpacket_dequeue(q))) rawpacket_free(rp);
 }
 
-struct rawpacket *rawpacket_queue(struct rawpacket_tailhead *q,const struct sockaddr_storage* dst,uint32_t fwmark_orig,uint32_t fwmark,const char *ifin,const char *ifout,const void *data,size_t len,size_t len_payload,const t_ctrack_positions *tpos)
+struct rawpacket *rawpacket_queue(
+	struct rawpacket_tailhead *q,
+	const struct sockaddr_storage* dst,
+	uint32_t fwmark_orig,uint32_t fwmark,
+	const char *ifin,const char *ifout,
+	const void *data,size_t len,size_t len_payload,
+	const t_ctrack_positions *tpos,
+	bool server_side)
 {
 	struct rawpacket *rp = malloc(sizeof(struct rawpacket));
 	if (!rp) return NULL;
@@ -61,6 +68,7 @@ struct rawpacket *rawpacket_queue(struct rawpacket_tailhead *q,const struct sock
 	}
 	else
 		rp->tpos_present = false;
+	rp->server_side = server_side;
 	
 	TAILQ_INSERT_TAIL(q, rp, next);
 	

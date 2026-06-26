@@ -20,6 +20,8 @@
 #include "nfqws.h"
 
 #ifdef __CYGWIN__
+#include "timer.h"
+
 #include <sys/cygwin.h>
 
 #include <wlanapi.h>
@@ -48,7 +50,7 @@ uint32_t net32_add(uint32_t netorder_value, uint32_t cpuorder_increment)
 {
 	return htonl(ntohl(netorder_value)+cpuorder_increment);
 }
-uint32_t net16_add(uint16_t netorder_value, uint16_t cpuorder_increment)
+uint16_t net16_add(uint16_t netorder_value, uint16_t cpuorder_increment)
 {
 	return htons(ntohs(netorder_value)+cpuorder_increment);
 }
@@ -229,7 +231,7 @@ uint16_t family_from_proto(uint8_t l3proto)
 	{
 		case IPPROTO_IP: return AF_INET;
 		case IPPROTO_IPV6: return AF_INET6;
-		default: return -1;
+		default: return AF_UNSPEC;
 	}
 }
 
@@ -285,7 +287,7 @@ void str_icmp_type_name(char *s, size_t s_len, bool v6, uint8_t type)
 
 static void str_srcdst_ip(char *s, size_t s_len, const void *saddr,const void *daddr)
 {
-	char s_ip[16],d_ip[16];
+	char s_ip[INET_ADDRSTRLEN],d_ip[INET_ADDRSTRLEN];
 	*s_ip=*d_ip=0;
 	inet_ntop(AF_INET, saddr, s_ip, sizeof(s_ip));
 	inet_ntop(AF_INET, daddr, d_ip, sizeof(d_ip));
@@ -306,7 +308,7 @@ void print_ip(const struct ip *ip)
 }
 void str_srcdst_ip6(char *s, size_t s_len, const void *saddr,const void *daddr)
 {
-	char s_ip[40],d_ip[40];
+	char s_ip[INET6_ADDRSTRLEN],d_ip[INET6_ADDRSTRLEN];
 	*s_ip=*d_ip=0;
 	inet_ntop(AF_INET6, saddr, s_ip, sizeof(s_ip));
 	inet_ntop(AF_INET6, daddr, d_ip, sizeof(d_ip));
@@ -314,14 +316,14 @@ void str_srcdst_ip6(char *s, size_t s_len, const void *saddr,const void *daddr)
 }
 void str_ip6hdr(char *s, size_t s_len, const struct ip6_hdr *ip6hdr, uint8_t proto)
 {
-	char ss[83],s_proto[16];
+	char ss[100],s_proto[16];
 	str_srcdst_ip6(ss,sizeof(ss),&ip6hdr->ip6_src,&ip6hdr->ip6_dst);
 	str_proto_name(s_proto,sizeof(s_proto),proto);
 	snprintf(s,s_len,"%s proto=%s ttl=%u",ss,s_proto,ip6hdr->ip6_hlim);
 }
 void print_ip6hdr(const struct ip6_hdr *ip6hdr, uint8_t proto)
 {
-	char s[128];
+	char s[132];
 	str_ip6hdr(s,sizeof(s),ip6hdr,proto);
 	printf("%s",s);
 }
@@ -335,7 +337,7 @@ void str_tcphdr(char *s, size_t s_len, const struct tcphdr *tcphdr)
 	if (tcphdr->th_flags & TH_PUSH) *f++='P';
 	if (tcphdr->th_flags & TH_URG) *f++='U';
 	*f=0;
-	snprintf(s,s_len,"sport=%u dport=%u flags=%s seq=%u ack_seq=%u",htons(tcphdr->th_sport),htons(tcphdr->th_dport),flags,htonl(tcphdr->th_seq),htonl(tcphdr->th_ack));
+	snprintf(s,s_len,"sport=%u dport=%u flags=%s seq=%u ack_seq=%u",ntohs(tcphdr->th_sport),ntohs(tcphdr->th_dport),flags,ntohl(tcphdr->th_seq),ntohl(tcphdr->th_ack));
 }
 void print_tcphdr(const struct tcphdr *tcphdr)
 {
@@ -345,7 +347,7 @@ void print_tcphdr(const struct tcphdr *tcphdr)
 }
 void str_udphdr(char *s, size_t s_len, const struct udphdr *udphdr)
 {
-	snprintf(s,s_len,"sport=%u dport=%u",htons(udphdr->uh_sport),htons(udphdr->uh_dport));
+	snprintf(s,s_len,"sport=%u dport=%u",ntohs(udphdr->uh_sport),ntohs(udphdr->uh_dport));
 }
 void print_udphdr(const struct udphdr *udphdr)
 {
@@ -358,9 +360,9 @@ void str_icmphdr(char *s, size_t s_len, bool v6, const struct icmp46 *icmp)
 	char stype[32];
 	str_icmp_type_name(stype,sizeof(stype),v6,icmp->icmp_type);
 	if (icmp->icmp_type==ICMP_ECHO || icmp->icmp_type==ICMP_ECHOREPLY || icmp->icmp_type==ICMP6_ECHO_REQUEST || icmp->icmp_type==ICMP6_ECHO_REPLY)
-		snprintf(s,s_len,"icmp_type=%s icmp_code=%u id=0x%04X seq=%u",stype,icmp->icmp_code,ntohs(icmp->icmp_data16[0]),ntohs(icmp->icmp_data16[1]));
+		snprintf(s,s_len,"icmp_type=%s icmp_code=%u id=0x%04X seq=%u",stype,icmp->icmp_code,ntohs(icmp->data.data16[0]),ntohs(icmp->data.data16[1]));
 	else
-		snprintf(s,s_len,"icmp_type=%s icmp_code=%u data=0x%08X",stype,icmp->icmp_code,ntohl(icmp->icmp_data32));
+		snprintf(s,s_len,"icmp_type=%s icmp_code=%u data=0x%08X",stype,icmp->icmp_code,ntohl(icmp->data.data32));
 }
 void print_icmphdr(const struct icmp46 *icmp, bool v6)
 {
@@ -383,9 +385,11 @@ bool proto_check_ipv4_payload(const uint8_t *data, size_t len)
 	return len >= ntohs(((struct ip*)data)->ip_len);
 }
 // move to transport protocol
-void proto_skip_ipv4(const uint8_t **data, size_t *len)
+void proto_skip_ipv4(const uint8_t **data, size_t *len, bool *frag, uint16_t *frag_off)
 {
 	uint8_t off = ((struct ip*)*data)->ip_hl << 2;
+	if (frag_off) *frag_off = (ntohs(((struct ip*)*data)->ip_off) & IP_OFFMASK) << 3;
+	if (frag) *frag = ntohs(((struct ip*)*data)->ip_off) & (IP_OFFMASK|IP_MF);
 	*data += off;
 	*len -= off;
 }
@@ -434,21 +438,25 @@ bool proto_check_ipv6_payload(const uint8_t *data, size_t len)
 }
 // move to transport protocol
 // proto_type = 0 => error
-void proto_skip_ipv6(const uint8_t **data, size_t *len, uint8_t *proto_type)
+void proto_skip_ipv6(const uint8_t **data, size_t *len, uint8_t *proto_type, bool *frag, uint16_t *frag_off)
 {
 	size_t hdrlen;
-	uint8_t HeaderType;
-	uint16_t plen;
 	struct ip6_hdr *ip6 = (struct ip6_hdr*)*data;
+	uint16_t plen;
+	uint16_t fr_off=0;
+	bool fr=false;
+	uint8_t HeaderType;
 
 	if (proto_type) *proto_type = 0; // put error in advance
+	if (frag) *frag = false;
+	if (frag_off) *frag_off = 0;
 
 	HeaderType = ip6->ip6_nxt;
 	if (proto_type) *proto_type = HeaderType;
 	plen = ntohs(ip6->ip6_ctlun.ip6_un1.ip6_un1_plen);
 	*data += sizeof(struct ip6_hdr); *len -= sizeof(struct ip6_hdr); // skip ipv6 base header
 	if (plen < *len) *len = plen;
-	while (*len) // need at least one byte for NextHeader field
+	while (*len && !(fr && fr_off)) // need at least one byte for NextHeader field. stop after fragment header if not first fragment
 	{
 		switch (HeaderType)
 		{
@@ -463,6 +471,11 @@ void proto_skip_ipv6(const uint8_t **data, size_t *len, uint8_t *proto_type)
 			break;
 		case IPPROTO_FRAGMENT: // fragment. length fixed to 8, hdrlen field defined as reserved
 			hdrlen = 8;
+			if (*len < hdrlen) return; // error
+			fr_off = ntohs(((struct ip6_frag*)*data)->ip6f_offlg & IP6F_OFF_MASK);
+			fr = ((struct ip6_frag*)*data)->ip6f_offlg & (IP6F_OFF_MASK|IP6F_MORE_FRAG);
+			if (frag_off) *frag_off = fr_off;
+			if (frag) *frag = fr;
 			break;
 		case IPPROTO_AH:
 			// special case. length in ah header is in 32-bit words minus 2
@@ -488,16 +501,18 @@ void proto_skip_ipv6(const uint8_t **data, size_t *len, uint8_t *proto_type)
 uint8_t *proto_find_ip6_exthdr(struct ip6_hdr *ip6, size_t len, uint8_t proto)
 {
 	size_t hdrlen;
-	uint8_t HeaderType, last_proto, *data;
 	uint16_t plen;
+	uint8_t HeaderType, last_proto, *data;
+	bool fr=false;
+	uint16_t fr_off=0;
 
-	if (len<sizeof(struct ip6_hdr)) return false;
+	if (len<sizeof(struct ip6_hdr)) return NULL;
 	plen = ntohs(ip6->ip6_ctlun.ip6_un1.ip6_un1_plen);
 	last_proto = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
 	data = (uint8_t*)(ip6+1);
 	len -= sizeof(struct ip6_hdr);
 	if (plen < len) len = plen;
-	while (len) // need at least one byte for NextHeader field
+	while (len && !(fr && fr_off)) // need at least one byte for NextHeader field. stop after fragment header if not first fragment
 	{
 		if (last_proto==proto) return data; // found
 		switch (last_proto)
@@ -508,15 +523,18 @@ uint8_t *proto_find_ip6_exthdr(struct ip6_hdr *ip6, size_t len, uint8_t proto)
 		case IPPROTO_MH: // mobility header
 		case IPPROTO_HIP: // Host Identity Protocol Version v2
 		case IPPROTO_SHIM6:
-			if (len < 2) return false; // error
+			if (len < 2) return NULL; // error
 			hdrlen = 8 + (data[1] << 3);
 			break;
 		case IPPROTO_FRAGMENT: // fragment. length fixed to 8, hdrlen field defined as reserved
 			hdrlen = 8;
+			if (len < hdrlen) return NULL; // error
+			fr_off = ntohs(((struct ip6_frag*)data)->ip6f_offlg & IP6F_OFF_MASK);
+			fr = ((struct ip6_frag*)data)->ip6f_offlg & (IP6F_OFF_MASK|IP6F_MORE_FRAG);
 			break;
 		case IPPROTO_AH:
 			// special case. length in ah header is in 32-bit words minus 2
-			if (len < 2) return false; // error
+			if (len < 2) return NULL; // error
 			hdrlen = 8 + (data[1] << 2);
 			break;
 		default:
@@ -524,7 +542,7 @@ uint8_t *proto_find_ip6_exthdr(struct ip6_hdr *ip6, size_t len, uint8_t proto)
 			// exthdr was not found
 			return NULL;
 		}
-		if (len < hdrlen) return false; // error
+		if (len < hdrlen) return NULL; // error
 		last_proto = *data;
 		len -= hdrlen; data += hdrlen;
 	}
@@ -541,19 +559,25 @@ void proto_dissect_l3l4(const uint8_t *data, size_t len, struct dissect *dis, bo
 	dis->data_pkt = data;
 	dis->len_pkt = len;
 
+	uint16_t iplen;
+
 	if (proto_check_ipv4(data, len) && (no_payload_check || proto_check_ipv4_payload(data, len)))
 	{
 		dis->ip = (const struct ip *) data;
 		dis->proto = dis->ip->ip_p;
 		p = data;
-		proto_skip_ipv4(&data, &len);
+		iplen = ntohs(((struct ip*)data)->ip_len);
+		if (iplen<len) dis->len_pkt = len = iplen;
+		proto_skip_ipv4(&data, &len, &dis->frag, &dis->frag_off);
 		dis->len_l3 = data-p;
 	}
 	else if (proto_check_ipv6(data, len) && (no_payload_check || proto_check_ipv6_payload(data, len)))
 	{
 		dis->ip6 = (const struct ip6_hdr *) data;
 		p = data;
-		proto_skip_ipv6(&data, &len, &dis->proto);
+		iplen = ntohs(((struct ip6_hdr*)data)->ip6_ctlun.ip6_un1.ip6_un1_plen) + sizeof(struct ip6_hdr);
+		if (iplen<len) dis->len_pkt = len = iplen;
+		proto_skip_ipv6(&data, &len, &dis->proto, &dis->frag, &dis->frag_off);
 		dis->len_l3 = data-p;
 	}
 	else
@@ -562,31 +586,31 @@ void proto_dissect_l3l4(const uint8_t *data, size_t len, struct dissect *dis, bo
 	}
 
 	dis->transport_len = len;
+	dis->len_l4 = 0;
 
-	if (dis->proto==IPPROTO_TCP && proto_check_tcp(data, len))
+	if (!dis->frag)
 	{
-		dis->tcp = (const struct tcphdr *) data;
-		p = data;
-		proto_skip_tcp(&data, &len);
-		dis->len_l4 = data-p;
-	}
-	else if (dis->proto==IPPROTO_UDP && proto_check_udp(data, len) && (no_payload_check || proto_check_udp_payload(data, len)))
-	{
-		dis->udp = (const struct udphdr *) data;
-		p = data;
-		proto_skip_udp(&data, &len);
-		dis->len_l4 = data-p;
-	}
-	else if ((dis->proto==IPPROTO_ICMP || dis->proto==IPPROTO_ICMPV6) && proto_check_icmp(data, len))
-	{
-		dis->icmp = (const struct icmp46 *) data;
-		p = data;
-		proto_skip_icmp(&data, &len);
-		dis->len_l4 = data-p;
-	}
-	else
-	{
-		dis->len_l4 = 0;
+		if (dis->proto==IPPROTO_TCP && proto_check_tcp(data, len))
+		{
+			dis->tcp = (const struct tcphdr *) data;
+			p = data;
+			proto_skip_tcp(&data, &len);
+			dis->len_l4 = data-p;
+		}
+		else if (dis->proto==IPPROTO_UDP && proto_check_udp(data, len) && (no_payload_check || proto_check_udp_payload(data, len)))
+		{
+			dis->udp = (const struct udphdr *) data;
+			p = data;
+			proto_skip_udp(&data, &len);
+			dis->len_l4 = data-p;
+		}
+		else if ((dis->proto==IPPROTO_ICMP || dis->proto==IPPROTO_ICMPV6) && proto_check_icmp(data, len))
+		{
+			dis->icmp = (const struct icmp46 *) data;
+			p = data;
+			proto_skip_icmp(&data, &len);
+			dis->len_l4 = data-p;
+		}
 	}
 
 	dis->data_payload = data;
@@ -781,8 +805,8 @@ static BOOL RemoveTokenPrivs(void)
 							if (memcmp(&privs->Privileges[k].Luid, &luid_SeChangeNotifyPrivilege, sizeof(LUID)))
 								privs->Privileges[k].Attributes = SE_PRIVILEGE_REMOVED;
 						}
+						bRes = AdjustTokenPrivileges(hToken, FALSE, privs, dwSize, NULL, NULL);
 					}
-					bRes = AdjustTokenPrivileges(hToken, FALSE, privs, dwSize, NULL, NULL);
 					free(privs);
 				}
 			}
@@ -906,11 +930,29 @@ BOOL SetMandatoryLabelObject(HANDLE h, SE_OBJECT_TYPE ObjType, DWORD dwMandatory
 
 bool ensure_file_access(const char *filename)
 {
-	return SetMandatoryLabelFile(filename, SECURITY_MANDATORY_LOW_RID, 0);
+	bool b=false;
+	size_t l = cygwin_conv_path(CCP_POSIX_TO_WIN_W | CCP_ABSOLUTE, filename, NULL, 0);
+	WCHAR *wfilename = (WCHAR*)malloc(l);
+	if (wfilename)
+	{
+		if (!cygwin_conv_path(CCP_POSIX_TO_WIN_W | CCP_ABSOLUTE, filename, wfilename, l))
+			b = SetMandatoryLabelFileW(wfilename, SECURITY_MANDATORY_LOW_RID, 0);
+		free(wfilename);
+	}
+	return b;
 }
 bool ensure_dir_access(const char *dir)
 {
-	return SetMandatoryLabelFile(dir, SECURITY_MANDATORY_LOW_RID, OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE);
+	bool b=false;
+	size_t l = cygwin_conv_path(CCP_POSIX_TO_WIN_W | CCP_ABSOLUTE, dir, NULL, 0);
+	WCHAR *wdir = (WCHAR*)malloc(l);
+	if (wdir)
+	{
+		if (!cygwin_conv_path(CCP_POSIX_TO_WIN_W | CCP_ABSOLUTE, dir, wdir, l))
+			b=SetMandatoryLabelFileW(wdir, SECURITY_MANDATORY_LOW_RID, OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE);
+		free(wdir);
+	}
+	return b;
 }
 
 bool prepare_low_appdata()
@@ -1541,7 +1583,6 @@ void rawsend_cleanup(void)
 {
 	if (w_filter)
 	{
-		CancelIoEx(w_filter,&ovl);
 		WinDivertClose(w_filter);
 		w_filter=NULL;
 	}
@@ -1569,76 +1610,115 @@ bool windivert_init(const char *filter)
 	return false;
 }
 
-static bool windivert_recv_filter(HANDLE hFilter, uint8_t *packet, size_t *len, WINDIVERT_ADDRESS *wa, unsigned int *wa_count)
+static bool windivert_recv_exit(void)
 {
-	UINT recv_len;
-	DWORD err;
-	DWORD rd;
-	char c;
+	sigset_t pending;
+
+	// make signals working
+	usleep(0);
 
 	if (bQuit)
 	{
 		errno=EINTR;
-		return false;
+		return true;
 	}
 	if (!logical_net_filter_match_rate_limited())
 	{
 		errno=ENODEV;
-		return false;
+		return true;
 	}
-	usleep(0);
+	return false;
+}
 
-	*wa_count *= sizeof(WINDIVERT_ADDRESS);
-	if (WinDivertRecvEx(hFilter, packet, *len, &recv_len, 0, wa, wa_count, &ovl))
+static bool windivert_recv_filter(HANDLE hFilter, uint8_t *packet, size_t *len, WINDIVERT_ADDRESS *wa, unsigned int *wa_count, uint64_t *bt_next)
+{
+	UINT recv_len;
+	DWORD rd,twait;
+	uint64_t tmax;
+	unsigned int wac;
+	uint64_t bt;
+
+	if (windivert_recv_exit())
+		return false;
+
+	if (params.timers)
 	{
-		*wa_count /= sizeof(WINDIVERT_ADDRESS);
+		if (!*bt_next) *bt_next = TimerPoolNext(params.timers, &params.timers_dirty);
+		bt = boottime_ms();
+		tmax = *bt_next>bt ? *bt_next-bt : 0;
+		if (!tmax)
+		{
+			*bt_next = TimerPoolRun(&params.timers, &params.timers_dirty, bt);
+			bt = boottime_ms();
+			tmax = *bt_next>bt ? *bt_next-bt : 0;
+		}
+	}
+	else
+	{
+		*bt_next = 0;
+		tmax = 0;
+	}
+
+	wac = *wa_count * sizeof(WINDIVERT_ADDRESS);
+	if (WinDivertRecvEx(hFilter, packet, *len, &recv_len, 0, wa, &wac, &ovl))
+	{
+		*wa_count = wac/sizeof(WINDIVERT_ADDRESS);
 		*len = recv_len;
 		return true;
 	}
 
-	for(;;)
+	w_win32_error = GetLastError();
+	switch(w_win32_error)
 	{
-		w_win32_error = GetLastError();
-
-		switch(w_win32_error)
-		{
-			case ERROR_IO_PENDING:
-				// make signals working
-				while (WaitForSingleObject(ovl.hEvent,50)==WAIT_TIMEOUT)
+		case ERROR_IO_PENDING:
+			// need to check for signals periodically
+			for(;;)
+			{
+				if (params.timers)
 				{
-					if (bQuit)
-					{
-						errno=EINTR;
-						return false;
-					}
-					if (!logical_net_filter_match_rate_limited())
-					{
-						errno=ENODEV;
-						return false;
-					}
-					usleep(0);
+					twait = tmax>50 ? 50 : (DWORD)tmax;
+					tmax -= twait;
 				}
-				if (!GetOverlappedResult(hFilter,&ovl,&rd,TRUE))
-					continue;
-				*wa_count /= sizeof(WINDIVERT_ADDRESS);
-				*len = rd;
-				return true;
-			case ERROR_INSUFFICIENT_BUFFER:
-				errno = ENOBUFS;
-				break;
-			case ERROR_NO_DATA:
-				errno = ESHUTDOWN;
-				break;
-			default:
-				errno = EIO;
-		}
-		break;
+				else
+					twait = 50;
+				// make signals working
+				if (WaitForSingleObject(ovl.hEvent,twait)!=WAIT_TIMEOUT) break;
+				if (windivert_recv_exit())
+					return false;
+				if (params.timers && !tmax)
+				{
+					bt = boottime_ms();
+					*bt_next = TimerPoolRun(&params.timers, &params.timers_dirty, bt);
+					bt = boottime_ms();
+					tmax = *bt_next>bt ? *bt_next-bt : 0;
+				}
+			}
+			if (!GetOverlappedResult(hFilter,&ovl,&rd,FALSE))
+			{
+				errno=EIO;
+				goto cancel;
+			}
+			*wa_count = wac/sizeof(WINDIVERT_ADDRESS);
+			*len = rd;
+			return true;
+		case ERROR_INSUFFICIENT_BUFFER:
+			errno = ENOBUFS;
+			break;
+		case ERROR_NO_DATA:
+			errno = ESHUTDOWN;
+			break;
+		default:
+			errno = EIO;
 	}
+cancel:
+	// make sure no pending operations
+	CancelIoEx(w_filter,&ovl);
+	GetOverlappedResult(hFilter, &ovl, &rd, TRUE);
 	return false;
 }
-bool windivert_recv(uint8_t *packet, size_t *len, WINDIVERT_ADDRESS *wa, unsigned int *wa_count)
+bool windivert_recv(uint8_t *packet, size_t *len, WINDIVERT_ADDRESS *wa, unsigned int *wa_count, uint64_t *bt_next)
 {
-	return windivert_recv_filter(w_filter,packet,len,wa,wa_count);
+	return windivert_recv_filter(w_filter,packet,len,wa,wa_count,bt_next);
 }
 
 static bool windivert_send_filter(HANDLE hFilter, const uint8_t *packet, size_t len, const WINDIVERT_ADDRESS *wa)
@@ -1753,6 +1833,7 @@ static int rawsend_sendto_divert(sa_family_t family, int sock, const void *buf, 
 {
 	struct sockaddr_storage sa;
 	socklen_t slen;
+	ssize_t wr;
 
 #ifdef __FreeBSD__
 	// since FreeBSD 14 it requires hardcoded ipv4 values, although can also send ipv6 frames
@@ -1774,7 +1855,16 @@ static int rawsend_sendto_divert(sa_family_t family, int sock, const void *buf, 
 #endif
 	memset(&sa,0,slen);
 	sa.ss_family = family;
-	return sendto(sock, buf, len, 0, (struct sockaddr*)&sa, slen);
+	while ((wr=sendto(sock, buf, len, 0, (struct sockaddr*)&sa, slen))<0 && errno==EINTR);
+	if (wr<0)
+	{
+		char s[64];
+		snprintf(s,sizeof(s),"rawsend_sendto_divert: sendto (%zu)",len);
+		DLOG_PERROR(s);
+		return -1;
+	}
+
+	return wr;
 }
 #endif
 
@@ -1855,8 +1945,9 @@ static int rawsend_socket(sa_family_t family)
 		}
 		if (family==AF_INET && setsockopt(*sock, IPPROTO_IP, IP_NODEFRAG, &yes, sizeof(yes)) == -1)
 		{
+			// since 2.6.36
 			DLOG_PERROR("rawsend: setsockopt(IP_NODEFRAG)");
-			goto exiterr;
+			//goto exiterr;
 		}
 		if (family==AF_INET && setsockopt(*sock, IPPROTO_IP, IP_FREEBIND, &yes, sizeof(yes)) == -1)
 		{
@@ -1906,47 +1997,32 @@ bool rawsend(const struct sockaddr* dst,uint32_t fwmark,const char *ifout,const 
 #else
 
 #ifdef __linux__
-	struct sockaddr_storage sa_src;
 	switch(dst->sa_family)
 	{
 		case AF_INET:
 			if (!b_bind_fix4) goto nofix;
-			extract_endpoints(data,NULL,NULL,NULL, &sa_src, NULL);
 			break;
 		case AF_INET6:
 			if (!b_bind_fix6) goto nofix;
-			extract_endpoints(NULL,data,NULL,NULL, &sa_src, NULL);
 			break;
 		default:
 			return false; // should not happen
 	}
-	//printf("family %u dev %s bind : ",  dst->sa_family, ifout); print_sockaddr((struct sockaddr *)&sa_src); printf("\n");
+
+	// force outgoing interface for raw packets. linux may choose it wrong if ip rules exist
 	if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, ifout, ifout ? strlen(ifout)+1 : 0) == -1)
 	{
 		DLOG_PERROR("rawsend: setsockopt(SO_BINDTODEVICE)");
 		return false;
 	}
-	if (bind(sock, (const struct sockaddr*)&sa_src, dst->sa_family==AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6)))
-	{
-		DLOG_PERROR("rawsend: bind (ignoring)");
-		// do not fail. this can happen regardless of IP_FREEBIND
-		// rebind to any address
-		memset(&sa_src,0,sizeof(sa_src));
-		sa_src.ss_family = dst->sa_family;
-		if (bind(sock, (const struct sockaddr*)&sa_src, dst->sa_family==AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6)))
-		{
-			DLOG_PERROR("rawsend: bind to any");
-			return false;
-		}
-	}
 nofix:
 #endif
 
 	// normal raw socket sendto
-	bytes = sendto(sock, data, len, 0, (struct sockaddr*)&dst2, salen);
-	if (bytes==-1)
+	while ((bytes = sendto(sock, data, len, 0, (struct sockaddr*)&dst2, salen))<0 && errno==EINTR);
+	if (bytes<0)
 	{
-		char s[40];
+		char s[64];
 		snprintf(s,sizeof(s),"rawsend: sendto (%zu)",len);
 		DLOG_PERROR(s);
 		return false;
@@ -2064,6 +2140,7 @@ static uint16_t wlan_get_family_id(struct mnl_socket* nl)
 static int wlan_info_attr_cb(const struct nlattr *attr, void *data)
 {
 	struct wlan_interface *wlan = (struct wlan_interface *)data;
+	size_t len;
 	switch(mnl_attr_get_type(attr))
 	{
 		case NL80211_ATTR_IFINDEX:
@@ -2075,12 +2152,10 @@ static int wlan_info_attr_cb(const struct nlattr *attr, void *data)
 			wlan->ifindex = mnl_attr_get_u32(attr);
 			break;
 		case NL80211_ATTR_SSID:
-			if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
-			{
-				DLOG_PERROR("mnl_attr_validate(ssid)");
-				return MNL_CB_ERROR;
-			}
-			snprintf(wlan->ssid,sizeof(wlan->ssid),"%s",mnl_attr_get_str(attr));
+			len = mnl_attr_get_payload_len(attr);
+			if (len>=sizeof(wlan->ssid)) len=sizeof(wlan->ssid)-1;
+			memcpy(wlan->ssid, mnl_attr_get_payload(attr), len);
+			wlan->ssid[len]=0;
 			break;
 		case NL80211_ATTR_IFNAME:
 			if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
@@ -2126,8 +2201,8 @@ static uint8_t *find_ie(uint8_t *buf, size_t len, uint8_t ie)
 	{
 		if (len<(2+buf[1])) break;
 		if (buf[0]==ie) return buf;
-		buf+=buf[1]+2;
 		len-=buf[1]+2;
+		buf+=buf[1]+2;
 	}
 	return NULL;
 }
@@ -2210,6 +2285,7 @@ static bool scan_info(struct mnl_socket* nl, uint16_t wlan_family_id, struct wla
 	// wlan_info does not return ssid since kernel 5.19
 	// it's used to enumerate all wifi interfaces then call scan_info on each
 	if (!wlan_info(nl, wlan_family_id, &wc_all, false)) return false;
+	w->count=0;
 	for(int i=0;i<wc_all.count;i++)
 		if (!netlink_genl_simple_transact(nl, wlan_family_id, NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP, NL80211_CMD_GET_SCAN, 0, scan_prepare, (void*)&wc_all.wlan[i].ifindex, scan_info_cb, w))
 			return false;
@@ -2403,11 +2479,11 @@ bool set_socket_buffers(int fd, int rcvbuf, int sndbuf)
 	return true;
 }
 
-bool make_writeable_dir()
+bool make_writable_dir()
 {
 	char wdir[PATH_MAX], *wrdir;
-	if (*params.writeable_dir)
-		wrdir = params.writeable_dir;
+	if (*params.writable_dir)
+		wrdir = params.writable_dir;
 	else
 	{
 #ifdef __CYGWIN__
@@ -2423,20 +2499,11 @@ bool make_writeable_dir()
 	if (mkdir(wrdir,0755) && errno!=EEXIST)
 		return false;
 
-	bool b = false;
+	bool b;
 #ifdef __CYGWIN__
-	size_t l = cygwin_conv_path(CCP_POSIX_TO_WIN_W | CCP_ABSOLUTE, wrdir, NULL, 0);
-	WCHAR *wwrdir = (WCHAR*)malloc(l);
-	if (wwrdir)
-	{
-		if (!cygwin_conv_path(CCP_POSIX_TO_WIN_W | CCP_ABSOLUTE, wrdir, wwrdir, l))
-			b = SetMandatoryLabelFileW(wwrdir, SECURITY_MANDATORY_LOW_RID, OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE);
-		free(wwrdir);
-	}
+	b = ensure_dir_access(wrdir);
 #else
-	if (ensure_dir_access(wrdir))
-		b = true;
-	else
+	if (!(b=ensure_dir_access(wrdir)))
 	{
 		// could not chown. may be still accessible ?
 		char testfile[PATH_MAX];
@@ -2450,6 +2517,6 @@ bool make_writeable_dir()
 		}
 	}
 #endif
-	if (b) setenv("WRITEABLE",wrdir,1);
+	if (b) setenv("WRITABLE",wrdir,1);
 	return b;
 }

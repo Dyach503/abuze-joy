@@ -116,7 +116,7 @@ static char log_buf[4096];
 static size_t log_buf_sz=0;
 static void syslog_log_function(int priority, const char *line)
 {
-	syslog(priority,"%s",log_buf);
+	syslog(priority,"%s",line);
 }
 
 static int DLOG_FILENAME(const char *filename, const char *format, ...)
@@ -130,7 +130,7 @@ static int DLOG_FILENAME(const char *filename, const char *format, ...)
 }
 static void file_log_function(int priority, const char *line)
 {
-	DLOG_FILENAME(params.debug_logfile,"%s",log_buf);
+	DLOG_FILENAME(params.debug_logfile,"%s",line);
 }
 
 #ifdef __ANDROID__
@@ -405,7 +405,7 @@ static struct desync_profile_list *desync_profile_entry_alloc()
 struct desync_profile_list *dp_list_add(struct desync_profile_list_head *head)
 {
 	struct desync_profile_list *entry = desync_profile_entry_alloc();
-	if (!entry) return false;
+	if (!entry) return NULL;
 
 	struct desync_profile_list *tail, *item;
 	LIST_TAIL(head, tail, item);
@@ -559,6 +559,7 @@ void cleanup_params(struct params_s *params)
 	ipcacheDestroy(&params->ipcache);
 	blob_collection_destroy(&params->blobs);
 	strlist_destroy(&params->lua_init_scripts);
+	TimerPoolDestroy(&params->timers);
 
 #ifdef __CYGWIN__
 	strlist_destroy(&params->ssid_filter);
@@ -587,7 +588,7 @@ void init_params(struct params_s *params)
 	params->ctrack_t_fin = CTRACK_T_FIN;
 	params->ctrack_t_udp = CTRACK_T_UDP;
 	params->ipcache_lifetime = IPCACHE_LIFETIME;
-	params->lua_gc = LUA_GC_INTERVAL;
+	params->lua_gc = LUA_GC_INTERVAL*1000;
 
 	LIST_INIT(&params->hostlists);
 	LIST_INIT(&params->ipsets);

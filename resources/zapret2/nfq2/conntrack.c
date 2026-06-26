@@ -104,6 +104,7 @@ static void ConntrackInitTrack(t_ctrack *t)
 {
 	memset(t, 0, sizeof(*t));
 	t->l7proto = L7_UNKNOWN;
+	t->reasm_client_payload = L7P_UNKNOWN;
 	t->pos.client.scale = t->pos.server.scale = 0;
 	rawpacket_queue_init(&t->delayed);
 	lua_newtable(params.L);
@@ -140,8 +141,17 @@ static void ConntrackApplyPos(t_ctrack *t, bool bReverse, const struct dissect *
 
 	if (dis->ip6) direct->ip6flow = ntohl(dis->ip6->ip6_ctlun.ip6_un1.ip6_un1_flow);
 
-	scale = tcp_find_scale_factor(dis->tcp);
-	mss = tcp_find_mss(dis->tcp);
+	direct->winsize_calc = direct->winsize = ntohs(dis->tcp->th_win);
+	if (t->pos.state == SYN)
+	{
+		// scale and mss only valid in syn packets
+		scale = tcp_find_scale_factor(dis->tcp);
+		if (scale != SCALE_NONE) direct->scale = scale;
+		direct->mss = tcp_find_mss(dis->tcp);
+	}
+	else
+		// apply scale only outside of the SYN stage
+		direct->winsize_calc <<= direct->scale;
 
 	direct->seq_last = ntohl(dis->tcp->th_seq);
 	direct->pos = direct->seq_last + dis->len_payload;
@@ -154,10 +164,6 @@ static void ConntrackApplyPos(t_ctrack *t, bool bReverse, const struct dissect *
 		if (!((direct->pos - direct->uppos) & 0x80000000))
 			direct->uppos = direct->pos;
 	}
-	direct->winsize_calc = direct->winsize = ntohs(dis->tcp->th_win);
-	if (scale != SCALE_NONE) direct->scale = scale;
-	if (direct->scale != SCALE_NONE) direct->winsize_calc <<= direct->scale;
-	if (mss && !direct->mss) direct->mss = mss;
 
 	if (!direct->rseq_over_2G && ((direct->seq_last - direct->seq0) & 0x80000000))
 		direct->rseq_over_2G = true;
@@ -167,9 +173,6 @@ static void ConntrackApplyPos(t_ctrack *t, bool bReverse, const struct dissect *
 
 static void ConntrackFeedPacket(t_ctrack *t, bool bReverse, const struct dissect *dis)
 {
-	uint8_t scale;
-	uint16_t mss;
-
 	if (bReverse)
 	{
 		t->pos.server.pcounter++;
@@ -283,7 +286,7 @@ static bool ConntrackPoolFeedPool(t_conntrack_pool **pp, const struct dissect *d
 	}
 	return false;
 ok:
-	ctr->track.ipproto = proto;
+	ctr->track.pos.ipproto = proto;
 	if (ctrack) *ctrack = &ctr->track;
 	if (bReverse) *bReverse = b_rev;
 	return true;
@@ -347,13 +350,13 @@ void ConntrackPoolDump(const t_conntrack *p)
 {
 	t_conntrack_pool *t, *tmp;
 	time_t tnow;
-	char sa1[40], sa2[40];
+	char sa1[INET6_ADDRSTRLEN], sa2[INET6_ADDRSTRLEN];
 
 	if (!(tnow=boottime())) return;
 	HASH_ITER(hh, p->pool, t, tmp) {
 		taddr2str(t->conn.l3proto, &t->conn.src, sa1, sizeof(sa1));
 		taddr2str(t->conn.l3proto, &t->conn.dst, sa2, sizeof(sa2));
-		printf("%s [%s]:%u => [%s]:%u : %s : t0=%llu last=t0+%llu now=last+%llu client=d%llu/n%llu/b%llu server=d%llu/n%llu/b%lld ",
+		printf("%s [%s]:%u => [%s]:%u : %s : t0=%llu last=t0+%llu now=last+%llu client=d%llu/n%llu/b%llu server=d%llu/n%llu/b%llu ",
 			proto_name(t->conn.l4proto),
 			sa1, t->conn.sport, sa2, t->conn.dport,
 			t->conn.l4proto == IPPROTO_TCP ? connstate_s[t->track.pos.state] : "-",
@@ -365,8 +368,8 @@ void ConntrackPoolDump(const t_conntrack *p)
 				t->track.pos.client.seq0, t->track.pos.client.seq_last - t->track.pos.client.seq0, t->track.pos.client.pos - t->track.pos.client.seq0,
 				t->track.pos.server.seq0, t->track.pos.server.seq_last - t->track.pos.server.seq0, t->track.pos.server.pos - t->track.pos.server.seq0,
 				t->track.pos.client.mss, t->track.pos.server.mss,
-				t->track.pos.client.winsize, t->track.pos.client.scale == SCALE_NONE ? -1 : t->track.pos.client.scale,
-				t->track.pos.server.winsize, t->track.pos.server.scale == SCALE_NONE ? -1 : t->track.pos.server.scale);
+				t->track.pos.client.winsize, t->track.pos.client.scale,
+				t->track.pos.server.winsize, t->track.pos.server.scale);
 		else
 			printf("rseq=%u client.pos=%u rack=%u server.pos=%u",
 				t->track.pos.client.seq_last, t->track.pos.client.pos,

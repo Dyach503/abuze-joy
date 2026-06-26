@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <errno.h>
 
 #include "params.h"
 
@@ -18,7 +19,6 @@
 // __X32_SYSCALL_BIT defined in linux/unistd.h
 #include <linux/unistd.h>
 #include <syscall.h>
-#include <errno.h>
 
 /************ SECCOMP ************/
 
@@ -327,37 +327,66 @@ void daemonize(void)
 	int pid;
 	char cwd[PATH_MAX];
 
-	if (!getcwd(cwd, sizeof(cwd))) *cwd=0;
+	if (!getcwd(cwd, sizeof(cwd)))
+	{
+		DLOG_PERROR("getcwd");
+		*cwd=0;
+	}
 
 	pid = fork();
 	if (pid == -1)
 	{
 		DLOG_PERROR("fork");
-		exit(2);
+		exit(20);
 	}
 	else if (pid != 0)
 		exit(0);
 
-	if (*cwd)
-	{
-		int res = chdir(cwd);
-	}
+	if (*cwd && chdir(cwd)<0)
+		DLOG_PERROR("chdir");
 
 	if (setsid() == -1)
-		exit(2);
-	if (chdir("/") == -1)
-		exit(2);
-	close(STDIN_FILENO);
-	close(STDOUT_FILENO);
-	close(STDERR_FILENO);
+	{
+		DLOG_PERROR("setsid");
+		exit(21);
+	}
+	if (close(STDIN_FILENO)<0 && errno!=EBADF)
+	{
+		DLOG_PERROR("close(stdin)");
+		exit(22);
+	}
+	if (close(STDOUT_FILENO)<0 && errno!=EBADF)
+	{
+		DLOG_PERROR("close(stdout)");
+		exit(22);
+	}
+	if (close(STDERR_FILENO)<0 && errno!=EBADF)
+	{
+		DLOG_PERROR("close(stderr)");
+		exit(22);
+	}
 	/* redirect fd's 0,1,2 to /dev/null */
-	open("/dev/null", O_RDWR);
-	int fd;
 	/* stdin */
-	fd = dup(0);
+	if (open("/dev/null", O_RDWR)<0)
+	{
+		// will work only if debug not to console
+		DLOG_PERROR("open(stdin)");
+		exit(23);
+	}
 	/* stdout */
-	fd = dup(0);
+	if (dup(0)<0)
+	{
+		// will work only if debug not to console
+		DLOG_PERROR("dup(stdout)");
+		exit(24);
+	}
 	/* stderror */
+	if (dup(0)<0)
+	{
+		// will work only if debug not to console
+		DLOG_PERROR("dup(stderr)");
+		exit(25);
+	}
 }
 
 bool writepid(const char *filename)

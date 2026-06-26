@@ -15,7 +15,7 @@ end
 function test_all(...)
 	test_run({
 		test_crypto, test_bin, test_time, test_gzip, test_ipstr, test_dissect, test_csum, test_resolve,
-		test_get_source_ip, test_ifaddrs, test_rawsend},...)
+		test_get_source_ip, test_ifaddrs, test_rawsend, test_timer},...)
 end
 
 
@@ -90,10 +90,9 @@ function test_hkdf()
 			local ikm = brandom(math.random(5,10))
 			for ninfo=1,nblob do
 				local info = brandom(math.random(5,10))
-				local okm_prev
 				for k,sha in pairs({"sha256","sha224"}) do
-					for k,okml in pairs({8, 16, 50}) do
 					local okm_prev
+					for k,okml in pairs({8, 16, 50}) do
 						local okm
 						print("* hkdf "..sha)
 						print("salt: "..string2hex(salt))
@@ -107,7 +106,6 @@ function test_hkdf()
 							print("duplicate okm !")
 						end
 						okms[okm] = true
-
 						test_assert(not okm_prev or okm_prev==string.sub(okm, 1, #okm_prev))
 						okm_prev = okm
 					end
@@ -121,7 +119,7 @@ function test_aes()
 	print("* aes")
 
 	local clear_text="test "..brandom_az09(11)
-	local iv, key, encrypted, decrypted
+	local encrypted, decrypted
 
 	for key_size=16,32,8 do
 		local key = brandom(key_size)
@@ -420,26 +418,35 @@ function test_time(...)
 
 	local unixtime=os.time()
 	local tm = localtime(unixtime);
+	local t
 	print()
 	print("now: "..tm.str.." "..tm.zone.." = "..unixtime)
 	local tm = gmtime(unixtime);
 	print("gmt: "..tm.str.." "..tm.zone.." = "..unixtime)
 	print()
 	for i=1,20 do
-		unixtime = math.random(0,10000000000);
+		unixtime = math.random(0,0x7FFFFFFF);
 		tm = localtime(unixtime);
-		local t = timelocal(tm)
+		t = timelocal(tm)
 		print("timelocal: "..tm.str.." "..tm.zone.." = "..t)
 		print( t==unixtime and "LOCALTIME OK" or "LOCALTIME FAILED" )
 		test_assert(t==unixtime)
 
-		unixtime = math.random(0,10000000000);
+		unixtime = math.random(0,0x7FFFFFFF);
 		tm = gmtime(unixtime);
 		t = timegm(tm)
 		print("timegm: "..tm.str.." "..tm.zone.." = "..t)
 		print( t==unixtime and "GMTIME OK" or "GMTIME FAILED" )
 		test_assert(t==unixtime)
 	end
+	unixtime = math.random(0x80000000,0xFFFFFFFF);
+	tm = gmtime(unixtime)
+	t = timegm(tm)
+	print( t==unixtime and "TIME 0x80000000..0xFFFFFFFF OK" or "TIME 0x80000000..0xFFFFFFFF FAILED : "..unixtime.." != "..t.." ("..tm.str..")" )
+	unixtime = math.random(0x100000000,0x200000000);
+	tm = gmtime(unixtime)
+	t = timegm(tm)
+	print( t==unixtime and "TIME 64 OK" or "TIME 64 FAILED : "..unixtime.." != "..t.." ("..tm.str..")" )
 end
 
 function test_gzip()
@@ -500,7 +507,7 @@ end
 function test_dissect()
 	print("* dissect")
 
-	local dis, raw1, raw2
+	local raw1, raw2
 
 	for i=1,20 do
 		print("* dissect test "..tostring(i))
@@ -604,7 +611,7 @@ function test_dissect()
 			},
 			payload = brandom(math.random(0, 20))
 		}
-	
+
 		raw1 = reconstruct_dissect(ip6_udp)
 		print("IP6+UDP : "..string2hex(raw1))
 		dis1 = dissect(raw1)
@@ -765,11 +772,6 @@ function test_csum()
 		uh_ulen = UDP_BASE_LEN + #payload
 	}
 
-	ip.ip_p = IPPROTO_UDP
-	ip4b = reconstruct_iphdr(ip)
-	ip6.ip6_plen = packet_len({ip6=ip6,udp=udp,payload=payload}) - IP6_BASE_LEN
-	ip6b = reconstruct_ip6hdr(ip6, {ip6_last_proto=IPPROTO_UDP})
-
 	udpb = reconstruct_udphdr(udp)
 	raw =	bu16(udp.uh_sport) ..
 		bu16(udp.uh_dport) ..
@@ -778,8 +780,10 @@ function test_csum()
 	print( raw==udpb and "UDP RECONSTRUCT OK" or "UDP RECONSTRUCT FAILED" )
 	test_assert(raw==udpb)
 
+	ip.ip_p = IPPROTO_UDP
 	raw = reconstruct_dissect({ip=ip, udp=udp, payload=payload})
 	dis1 = dissect(raw)
+	ip.ip_p = IPPROTO_UDP
 	ip.ip_len = IP_BASE_LEN + #ip.options + #udpb + #payload
 	ip4b = reconstruct_iphdr(ip)
 	udpb = csum_udp_fix(ip4b,udpb,payload)
@@ -787,6 +791,8 @@ function test_csum()
 	print( dis1.udp.uh_sum==dis2.udp.uh_sum and "UDP+IP4 CSUM OK" or "UDP+IP4 CSUM FAILED" )
 	test_assert(dis1.udp.uh_sum==dis2.udp.uh_sum)
 
+	ip6.ip6_plen = packet_len({ip6=ip6,udp=udp,payload=payload}) - IP6_BASE_LEN
+	ip6b = reconstruct_ip6hdr(ip6, {ip6_last_proto=IPPROTO_UDP})
 	raw = reconstruct_dissect({ip6=ip6, udp=udp, payload=payload})
 	dis1 = dissect(raw)
 	udpb = csum_udp_fix(ip6b,udpb,payload)
@@ -901,6 +907,53 @@ function test_ifaddrs(opts)
 	end
 end
 
+function print_current_time()
+	local sec,nsec = clock_gettime()
+	local t = sec + nsec/1000000000;
+	print("time: "..t)
+end
+function timer_info_print(tinfo)
+	print(" timer_info.name="..tinfo.name)
+	print(" timer_info.func="..tinfo.func)
+	print(" timer_info.period="..tinfo.period)
+	print(" timer_info.oneshot="..tostring(tinfo.oneshot))
+	print(" timer_info.fires="..tinfo.fires)
+end
+function timer_info_print_by_name(name)
+	local tinfo = timer_info(name)
+	timer_info_print(tinfo)
+end
+
+function timer1(name, data)
+	print("timer "..name.." fired. data="..tostring(data))
+	print_current_time()
+	timer_info_print_by_name(name)
+end
+function timer2(name, data)
+	data.n = data.n+1
+	print("timer "..name.." fired. data.n="..tostring(data.n))
+	print_current_time()
+	timer_info_print_by_name(name)
+	if data.n>=4 then
+		timer_del(name)
+	end
+end
+function test_timer(opts)
+	timer_set("t1","timer1",500,true,"sample_data");
+	local tbl = {n=0}
+	timer_set("t2","timer2",700,false,tbl);
+
+	print("* timers\n")
+	local timers=timer_enum()
+	for i,name in ipairs(timers) do
+		print("TIMER "..i.." :")
+		timer_info_print_by_name(name)
+	end
+	print_current_time()
+	print()
+end
+
+
 function test_rawsend(opts)
 	print("* rawsend")
 
@@ -942,7 +995,6 @@ function test_rawsend(opts)
 	end
 	local ip, ip6, udp, dis, ddis, raw_ip, raw_udp, raw
 	local payload = brandom(math.random(100,1200))
-	local b
 
 	local target
 	for ifname,ifinfo in pairs(get_ifaddrs()) do
@@ -990,7 +1042,6 @@ function test_rawsend(opts)
 	print("send ipv4 udp using pure rawsend without dissect")
 	test_assert(rawsend_print(raw, {repeats=5}))
 
-	local target
 	for ifname,ifinfo in pairs(get_ifaddrs()) do
 		for k,v in pairs(ifinfo.addr) do
 			if #v.addr==16 and (string.sub(v.addr,1,1)=="\xFC" or string.sub(v.addr,1,1)=="\xFD") then
@@ -1076,7 +1127,7 @@ function test_rawsend(opts)
 	print("send ipv6 icmp")
 	test_assert(rawsend_dissect_print(dis, {fwmark = 0x8E10, repeats=3}))
 
-	local ip2 = {
+	ip2 = {
 		ip_tos = 0,
 		ip_id = math.random(0,0xFFFF),
 		ip_off = 0,

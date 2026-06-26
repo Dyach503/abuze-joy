@@ -62,6 +62,8 @@ pub enum DpiStrategy {
     Normal,
     NormalPlus,
     NormalDiscord,
+    /// All-in-one circular auto-rotating strategy (runtime auto-select via zapret-auto.lua).
+    Auto,
     /// Visual strategy builder: args are generated from `ZapretConfig::profiles`.
     Builder,
     Custom,
@@ -71,9 +73,9 @@ pub enum DpiStrategy {
 /// Empty string fields are omitted from the generated `--lua-desync=` argument.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DesyncAction {
-    pub method: String, // fake | multisplit | multidisorder | fakedsplit | rst
+    pub method: String, // fake | multisplit | multidisorder | fakedsplit | rst | circular | wssize
     #[serde(default)]
-    pub blob: String, // fake-packet .bin filename from zapret2/files/fake
+    pub blob: String, // fake-packet .bin filename, inline 0xHEX, or built-in (fake_default_*)
     #[serde(default)]
     pub pos: String,
     #[serde(default)]
@@ -86,6 +88,36 @@ pub struct DesyncAction {
     pub pattern: String,
     #[serde(default)]
     pub tls_mod: String,
+    /// circular orchestration group tag → `strategy=N`.
+    #[serde(default)]
+    pub strategy: String,
+    /// Auto-TTL fooling, e.g. `-1,3-20`.
+    #[serde(default)]
+    pub ip_autottl: String,
+    /// Emit a bare `tcp_md5` fooling flag.
+    #[serde(default)]
+    pub tcp_md5: bool,
+    // circular parameters
+    #[serde(default)]
+    pub fails: String,
+    #[serde(default)]
+    pub maxtime: String,
+    #[serde(default)]
+    pub retrans: String,
+    #[serde(default)]
+    pub maxseq: String,
+    /// circular: send RST to the retransmitter on failure.
+    #[serde(default)]
+    pub reset: bool,
+    #[serde(default)]
+    pub udp_out: String,
+    #[serde(default)]
+    pub udp_in: String,
+    // wssize parameters
+    #[serde(default)]
+    pub wsize: String,
+    #[serde(default)]
+    pub scale: String,
 }
 
 /// A builder profile: one traffic filter + an ordered list of desync actions.
@@ -104,6 +136,11 @@ pub struct ZapretProfile {
     pub payload: String,
     #[serde(default)]
     pub hostlist_domains: String,
+    /// In-profile conntrack range filters, e.g. `-s4096` / `-d10`.
+    #[serde(default)]
+    pub in_range: String,
+    #[serde(default)]
+    pub out_range: String,
     #[serde(default)]
     pub desyncs: Vec<DesyncAction>,
 }
@@ -118,6 +155,25 @@ fn sanitize_blob_id(file: &str) -> String {
     base.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect()
+}
+
+/// A blob value that is loaded from a file (and therefore needs a `--blob=` declaration)
+/// rather than an inline hex literal (`0x…`) or a built-in name (`fake_default_*`),
+/// both of which are passed through to the desync `blob=` parameter verbatim.
+fn blob_is_file(blob: &str) -> bool {
+    let b = blob.trim();
+    !b.is_empty() && !b.starts_with("0x") && !b.starts_with("fake_default_")
+}
+
+/// Resolve the `blob=` parameter value for a desync action: a sanitized id for file blobs
+/// (matching the declared `--blob=` name), or the literal value for hex/built-in blobs.
+fn blob_param_value(blob: &str) -> String {
+    let b = blob.trim();
+    if blob_is_file(b) {
+        sanitize_blob_id(b)
+    } else {
+        b.to_string()
+    }
 }
 
 /// Build winws2 arguments from a list of builder profiles.
@@ -137,20 +193,24 @@ pub fn build_profile_args(
     }
 
     // Base Lua libraries — emitted once before any profile.
+    // zapret-auto.lua provides the `circular` orchestrator used for runtime auto-select.
     let lua_lib = resources_dir.join("zapret2/lua/zapret-lib.lua");
     let lua_antidpi = resources_dir.join("zapret2/lua/zapret-antidpi.lua");
+    let lua_auto = resources_dir.join("zapret2/lua/zapret-auto.lua");
     args.push(format!("--lua-init=@{}", fwd(&lua_lib)));
     args.push(format!("--lua-init=@{}", fwd(&lua_antidpi)));
+    args.push(format!("--lua-init=@{}", fwd(&lua_auto)));
 
-    // Declare every unique blob referenced across all desync actions.
+    // Declare every unique *file* blob referenced across all desync actions.
+    // Inline hex (0x…) and built-in (fake_default_*) blobs are passed through verbatim.
     let mut declared: Vec<String> = Vec::new();
     for p in profiles {
         for d in &p.desyncs {
             let blob = d.blob.trim();
-            if !blob.is_empty() && !declared.iter().any(|b| b == blob) {
+            if blob_is_file(blob) && !declared.iter().any(|b| b == blob) {
                 declared.push(blob.to_string());
                 let path = resources_dir.join("zapret2/files/fake").join(blob);
-                args.push(format!("--blob={}:{}", sanitize_blob_id(blob), fwd(&path)));
+                args.push(format!("--blob={}:@{}", sanitize_blob_id(blob), fwd(&path)));
             }
         }
     }
@@ -181,6 +241,12 @@ pub fn build_profile_args(
         if !p.hostlist_domains.trim().is_empty() {
             args.push(format!("--hostlist-domains={}", p.hostlist_domains.trim()));
         }
+        if !p.in_range.trim().is_empty() {
+            args.push(format!("--in-range={}", p.in_range.trim()));
+        }
+        if !p.out_range.trim().is_empty() {
+            args.push(format!("--out-range={}", p.out_range.trim()));
+        }
 
         for d in &p.desyncs {
             if d.method.trim().is_empty() {
@@ -188,7 +254,7 @@ pub fn build_profile_args(
             }
             let mut parts: Vec<String> = vec![d.method.trim().to_string()];
             if !d.blob.trim().is_empty() {
-                parts.push(format!("blob={}", sanitize_blob_id(d.blob.trim())));
+                parts.push(format!("blob={}", blob_param_value(d.blob.trim())));
             }
             if !d.pos.trim().is_empty() {
                 parts.push(format!("pos={}", d.pos.trim()));
@@ -207,6 +273,46 @@ pub fn build_profile_args(
             }
             if !d.tcp_ts.trim().is_empty() {
                 parts.push(format!("tcp_ts={}", d.tcp_ts.trim()));
+            }
+            // circular parameters
+            if !d.fails.trim().is_empty() {
+                parts.push(format!("fails={}", d.fails.trim()));
+            }
+            if !d.maxtime.trim().is_empty() {
+                parts.push(format!("maxtime={}", d.maxtime.trim()));
+            }
+            if !d.retrans.trim().is_empty() {
+                parts.push(format!("retrans={}", d.retrans.trim()));
+            }
+            if !d.maxseq.trim().is_empty() {
+                parts.push(format!("maxseq={}", d.maxseq.trim()));
+            }
+            if !d.udp_out.trim().is_empty() {
+                parts.push(format!("udp_out={}", d.udp_out.trim()));
+            }
+            if !d.udp_in.trim().is_empty() {
+                parts.push(format!("udp_in={}", d.udp_in.trim()));
+            }
+            if d.reset {
+                parts.push("reset".to_string());
+            }
+            // wssize parameters
+            if !d.wsize.trim().is_empty() {
+                parts.push(format!("wsize={}", d.wsize.trim()));
+            }
+            if !d.scale.trim().is_empty() {
+                parts.push(format!("scale={}", d.scale.trim()));
+            }
+            // fooling
+            if !d.ip_autottl.trim().is_empty() {
+                parts.push(format!("ip_autottl={}", d.ip_autottl.trim()));
+            }
+            if d.tcp_md5 {
+                parts.push("tcp_md5".to_string());
+            }
+            // circular orchestration group tag — kept last to match upstream examples.
+            if !d.strategy.trim().is_empty() {
+                parts.push(format!("strategy={}", d.strategy.trim()));
             }
             args.push(format!("--lua-desync={}", parts.join(":")));
         }
@@ -229,15 +335,17 @@ impl DpiStrategy {
             Self::Normal => {
                 let lua_lib = resources_dir.join("zapret2/lua/zapret-lib.lua");
                 let lua_antidpi = resources_dir.join("zapret2/lua/zapret-antidpi.lua");
+                let lua_auto = resources_dir.join("zapret2/lua/zapret-auto.lua");
                 let blob_file = resources_dir.join("zapret2/files/fake/tls_clienthello_www_google_com.bin");
 
                 vec![
+                    format!("--lua-init=@{}", path_to_string(&lua_lib)),
+                    format!("--lua-init=@{}", path_to_string(&lua_antidpi)),
+                    format!("--lua-init=@{}", path_to_string(&lua_auto)),
+                    format!("--blob=google:@{}", path_to_string(&blob_file)),
                     "--filter-tcp=443".into(),
                     "--filter-l7=tls".into(),
                     "--payload=tls_client_hello".into(),
-                    format!("--lua-init=@{}", path_to_string(&lua_lib)),
-                    format!("--lua-init=@{}", path_to_string(&lua_antidpi)),
-                    format!("--blob=google:{}", path_to_string(&blob_file)),
                     "--lua-desync=fakedsplit:pattern=0x00:tcp_ts=-600000".into(),
                 ]
             },
@@ -245,22 +353,24 @@ impl DpiStrategy {
             Self::NormalPlus => {
                 let lua_lib = resources_dir.join("zapret2/lua/zapret-lib.lua");
                 let lua_antidpi = resources_dir.join("zapret2/lua/zapret-antidpi.lua");
+                let lua_auto = resources_dir.join("zapret2/lua/zapret-auto.lua");
                 let blob_tls = resources_dir.join("zapret2/files/fake/tls_clienthello_www_google_com.bin");
                 let blob_quic = resources_dir.join("zapret2/files/fake/quic_initial_www_google_com.bin");
                 let discord_list = data_dir.join("discord_list.txt");
 
                 vec![
+                    format!("--lua-init=@{}", path_to_string(&lua_lib)),
+                    format!("--lua-init=@{}", path_to_string(&lua_antidpi)),
+                    format!("--lua-init=@{}", path_to_string(&lua_auto)),
+                    format!("--blob=google:@{}", path_to_string(&blob_tls)),
+                    format!("--blob=google_quic:@{}", path_to_string(&blob_quic)),
                     "--filter-tcp=443".into(),
                     "--filter-l7=tls".into(),
                     "--payload=tls_client_hello".into(),
-                    format!("--lua-init=@{}", path_to_string(&lua_lib)),
-                    format!("--lua-init=@{}", path_to_string(&lua_antidpi)),
-                    format!("--blob=google:{}", path_to_string(&blob_tls)),
                     "--lua-desync=fakedsplit:pattern=0x00:tcp_ts=-600000".into(),
                     "--new".into(),
                     "--filter-udp=19294-19344,50000-50100".into(),
                     "--filter-l7=discord,stun".into(),
-                    format!("--blob=google_quic:{}", path_to_string(&blob_quic)),
                     "--lua-desync=fake:blob=google_quic:repeats=8:tcp_ts=-600000".into(),
                     "--new".into(),
                     format!("--hostlist={}", path_to_string(&discord_list)),
@@ -277,6 +387,7 @@ impl DpiStrategy {
             Self::NormalDiscord => {
                 let lua_lib = resources_dir.join("zapret2/lua/zapret-lib.lua");
                 let lua_antidpi = resources_dir.join("zapret2/lua/zapret-antidpi.lua");
+                let lua_auto = resources_dir.join("zapret2/lua/zapret-auto.lua");
                 let blob_gosuslugi = resources_dir.join("zapret2/files/fake/tls_clienthello_gosuslugi_ru.bin");
                 let blob_stun = resources_dir.join("zapret2/files/fake/stun.bin");
                 let blob_google_quic = resources_dir.join("zapret2/files/fake/quic_initial_www_google_com.bin");
@@ -286,9 +397,10 @@ impl DpiStrategy {
                     // Rule 1: TCP 443 TLS — hostlist from manager (zapret_domains.txt).
                     format!("--lua-init=@{}", path_to_string(&lua_lib)),
                     format!("--lua-init=@{}", path_to_string(&lua_antidpi)),
-                    format!("--blob=fake_gosuslugi:{}", path_to_string(&blob_gosuslugi)),
-                    format!("--blob=fake_stun:{}", path_to_string(&blob_stun)),
-                    format!("--blob=google_quic:{}", path_to_string(&blob_google_quic)),
+                    format!("--lua-init=@{}", path_to_string(&lua_auto)),
+                    format!("--blob=fake_gosuslugi:@{}", path_to_string(&blob_gosuslugi)),
+                    format!("--blob=fake_stun:@{}", path_to_string(&blob_stun)),
+                    format!("--blob=google_quic:@{}", path_to_string(&blob_google_quic)),
                     // Rule 1 filter: TCP 443 TLS — hostlist comes from manager
                     "--filter-tcp=443".into(),
                     "--filter-l7=tls".into(),
@@ -332,6 +444,61 @@ impl DpiStrategy {
                     "--hostlist-domains=rutracker.org".into(),
                     "--lua-desync=fake:blob=fake_gosuslugi:tcp_ts=-10000:repeats=6".into(),
                     "--lua-desync=multisplit:pos=10:seqovl=652".into(),
+                ]
+            },
+            // Auto: all-in-one strategy that uses the `circular` orchestrator
+            // (zapret-auto.lua) to auto-rotate desync strategies per host at runtime.
+            // Requires inbound traffic capture (see ZapretManager::start → --wf-*-in).
+            Self::Auto => {
+                let lua_lib = resources_dir.join("zapret2/lua/zapret-lib.lua");
+                let lua_antidpi = resources_dir.join("zapret2/lua/zapret-antidpi.lua");
+                let lua_auto = resources_dir.join("zapret2/lua/zapret-auto.lua");
+                let blob_quic_google = resources_dir.join("zapret2/files/fake/quic_initial_www_google_com.bin");
+
+                vec![
+                    format!("--lua-init=@{}", path_to_string(&lua_lib)),
+                    format!("--lua-init=@{}", path_to_string(&lua_antidpi)),
+                    format!("--lua-init=@{}", path_to_string(&lua_auto)),
+                    format!("--blob=quic_google:@{}", path_to_string(&blob_quic_google)),
+                    // P1: TCP 443 TLS — circular rotation of three split strategies.
+                    "--filter-tcp=443".into(),
+                    "--filter-l7=tls".into(),
+                    "--in-range=-s4096".into(),
+                    "--out-range=-d10".into(),
+                    "--payload=tls_client_hello".into(),
+                    "--lua-desync=circular:fails=2:maxtime=30:retrans=2:maxseq=16384:reset".into(),
+                    "--lua-desync=wssize:wsize=1:scale=6".into(),
+                    "--lua-desync=multidisorder:pos=1,midsld:strategy=1".into(),
+                    "--lua-desync=wssize:wsize=1:scale=6".into(),
+                    "--lua-desync=multidisorder:pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1:strategy=2".into(),
+                    "--lua-desync=wssize:wsize=1:scale=6".into(),
+                    "--lua-desync=multisplit:pos=10:seqovl=1:strategy=3".into(),
+                    "--new".into(),
+                    // P2: UDP 443 QUIC — circular rotation of two fakes.
+                    "--filter-udp=443".into(),
+                    "--filter-l7=quic".into(),
+                    "--out-range=-d10".into(),
+                    "--in-range=-d10".into(),
+                    "--payload=quic_initial".into(),
+                    "--lua-desync=circular:fails=2:maxtime=30:udp_out=4:udp_in=1".into(),
+                    "--lua-desync=fake:blob=quic_google:repeats=5:strategy=1".into(),
+                    "--lua-desync=fake:blob=fake_default_quic:repeats=5:strategy=2".into(),
+                    "--new".into(),
+                    // P3: UDP STUN/Discord voice — zero-blob fake.
+                    "--filter-udp=50000-65535".into(),
+                    "--filter-l7=stun,discord".into(),
+                    "--out-range=-d10".into(),
+                    "--payload=stun,discord_ip_discovery".into(),
+                    "--lua-desync=fake:blob=0x00000000000000000000000000000000:repeats=2".into(),
+                    "--new".into(),
+                    // P4: TCP 80 HTTP — fake + fakedsplit with auto-TTL.
+                    "--filter-tcp=80".into(),
+                    "--filter-l7=http".into(),
+                    "--out-range=-d10".into(),
+                    "--in-range=-d1".into(),
+                    "--payload=http_req".into(),
+                    "--lua-desync=fake:blob=fake_default_http:ip_autottl=-1,3-20:tcp_md5".into(),
+                    "--lua-desync=fakedsplit:ip_autottl=-1,3-20:tcp_md5".into(),
                 ]
             },
             // Builder: args come from ZapretConfig::profiles via strategy_args().

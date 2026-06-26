@@ -188,7 +188,10 @@ static void packet_debug(bool replay, const struct dissect *dis)
 			{
 				char s_proto[16];
 				str_proto_name(s_proto,sizeof(s_proto),dis->proto);
-				DLOG("\nIP PROTO %s: len=%zu : ", s_proto, dis->len_payload);
+				if (dis->frag)
+					DLOG("\nIP FRAG off=%u PROTO %s: len=%zu : ", dis->frag_off, s_proto, dis->len_payload);
+				else
+					DLOG("\nIP PROTO %s: len=%zu : ", s_proto, dis->len_payload);
 				hexdump_limited_dlog(dis->data_payload, dis->len_payload, PKTDATA_MAXDUMP);
 				DLOG("\n");
 			}
@@ -286,11 +289,11 @@ static struct desync_profile *dp_find(
 	struct desync_profile_list *dpl;
 	if (params.debug)
 	{
-		char s[40];
+		char s[INET6_ADDRSTRLEN];
 		ntopa46(ip, ip6, s, sizeof(s));
 		if (ipr || ipr6)
 		{
-			char sr[40];
+			char sr[INET6_ADDRSTRLEN];
 			ntopa46(ipr, ipr6, sr, sizeof(sr));
 			DLOG("desync profile search for %s ip1=%s ip2=%s port=%u icmp=%u:%u l7proto=%s ssid='%s' hostname='%s'\n",
 				proto_name(l3proto), s, sr, port, icmp_type, icmp_code, l7proto_str(l7proto), ssid ? ssid : "", hostname ? hostname : "");
@@ -525,7 +528,7 @@ static bool send_delayed(t_ctrack *ctrack)
 	return true;
 }
 
-static bool reasm_start(t_ctrack *ctrack, t_reassemble *reasm, uint8_t proto, uint32_t seq, size_t sz, size_t szMax, const uint8_t *data_payload, size_t len_payload)
+static bool reasm_start(t_reassemble *reasm, uint8_t proto, uint32_t seq, size_t sz, size_t szMax, const uint8_t *data_payload, size_t len_payload)
 {
 	ReasmClear(reasm);
 	if (sz <= szMax)
@@ -543,7 +546,7 @@ static bool reasm_start(t_ctrack *ctrack, t_reassemble *reasm, uint8_t proto, ui
 		DLOG("unexpected large payload for reassemble: size=%zu\n", sz);
 	return false;
 }
-static bool reasm_client_start(t_ctrack *ctrack, uint8_t proto, size_t sz, size_t szMax, const uint8_t *data_payload, size_t len_payload)
+static bool reasm_client_start(t_ctrack *ctrack, uint8_t proto, t_l7payload pl, size_t sz, size_t szMax, const uint8_t *data_payload, size_t len_payload)
 {
 	if (!ctrack) return false;
 	// if pcounter==0 it means we dont know server window size - no incoming packets redirected ?
@@ -553,10 +556,11 @@ static bool reasm_client_start(t_ctrack *ctrack, uint8_t proto, size_t sz, size_
 		// server gave us too small tcp window
 		// client will not send all pieces of reasm
 		// if we drop packets and wait for next pieces we will see nothing but retransmissions
-		DLOG("reasm cancelled because server window size %u is smaller than expected reasm size %u\n", ctrack->pos.server.winsize_calc, sz);
+		DLOG("reasm cancelled because server window size %u is smaller than expected reasm size %zu\n", ctrack->pos.server.winsize_calc, sz);
 		return false;
 	}
-	return reasm_start(ctrack, &ctrack->reasm_client, proto, (proto == IPPROTO_TCP) ? ctrack->pos.client.seq_last : 0, sz, szMax, data_payload, len_payload);
+	ctrack->reasm_client_payload = pl;
+	return reasm_start(&ctrack->reasm_client, proto, (proto == IPPROTO_TCP) ? ctrack->pos.client.seq_last : 0, sz, szMax, data_payload, len_payload);
 }
 static bool reasm_feed(t_ctrack *ctrack, t_reassemble *reasm, uint8_t proto, uint32_t seq, const uint8_t *data_payload, size_t len_payload)
 {
@@ -589,6 +593,7 @@ static void reasm_client_stop(t_ctrack *ctrack, const char *dlog_msg)
 		{
 			DLOG("%s", dlog_msg);
 			ReasmClear(&ctrack->reasm_client);
+			ctrack->reasm_client_payload = L7P_UNKNOWN;
 		}
 		send_delayed(ctrack);
 	}
@@ -734,7 +739,7 @@ static bool ipcache_get_hostname(const struct in_addr *a4, const struct in6_addr
 	}
 	if (params.debug)
 	{
-		char s[40];
+		char s[INET6_ADDRSTRLEN];
 		ntopa46(a4, a6, s, sizeof(s));
 		DLOG("ipcache hostname search for %s\n", s);
 	}
@@ -743,7 +748,7 @@ static bool ipcache_get_hostname(const struct in_addr *a4, const struct in6_addr
 	{
 		if (params.debug)
 		{
-			char s[40];
+			char s[INET6_ADDRSTRLEN];
 			ntopa46(a4, a6, s, sizeof(s));
 			DLOG("got cached hostname for %s : %s (is_ip=%u)\n", s, ipc->hostname, ipc->hostname_is_ip);
 		}
@@ -1134,7 +1139,7 @@ static void setup_direction(
 
 	if (params.debug)
 	{
-		char ip[40];
+		char ip[INET6_ADDRSTRLEN];
 		ntopa46(*sdip4, *sdip6, ip, sizeof(ip));
 		DLOG("%s mode desync profile/ipcache search target ip=%s port=%u\n", params.server ? "server" : "client", ip, *sdport);
 	}
@@ -1207,8 +1212,7 @@ static bool play_prolog(
 			return false;
 		ps->bReverseFixed = ps->bReverse ^ params.server;
 		setup_direction(dis, ps->bReverseFixed, &ps->src, &ps->dst, &ps->sdip4, &ps->sdip6, &ps->sdport);
-
-		ifname = ps->bReverse ? ifin : ifout;
+		ifname = ps->bReverseFixed ? ifin : ifout;
 #ifdef HAS_FILTER_SSID
 		ps->ssid = wlan_ssid_search_ifname(ifname);
 		if (ps->ssid) DLOG("found ssid for %s : %s\n", ifname, ps->ssid);
@@ -1244,7 +1248,7 @@ static bool play_prolog(
 		// in absence of conntrack guess direction by presence of interface names. won't work on BSD
 		ps->bReverseFixed = ps->ctrack ? (ps->bReverse ^ params.server) : (ps->bReverse = ifin && *ifin && (!ifout || !*ifout));
 		setup_direction(dis, ps->bReverseFixed, &ps->src, &ps->dst, &ps->sdip4, &ps->sdip6, &ps->sdport);
-		ifname = ps->bReverse ? ifin : ifout;
+		ifname = ps->bReverseFixed ? ifin : ifout;
 #ifdef HAS_FILTER_SSID
 		ps->ssid = wlan_ssid_search_ifname(ifname);
 		if (ps->ssid) DLOG("found ssid for %s : %s\n", ifname, ps->ssid);
@@ -1551,12 +1555,7 @@ static uint8_t dpi_desync_tcp_packet_play(
 				}
 			}
 		}
-
-		if (ps.l7payload==L7P_HTTP_REQ)
-		{
-			ps.bHaveHost = HttpExtractHost(rdata_payload, rlen_payload, ps.host, sizeof(ps.host));
-		}
-		else if (ps.l7payload==L7P_TLS_CLIENT_HELLO || ps.l7proto==L7_TLS && ps.l7payload==L7P_UNKNOWN && ps.ctrack_replay && !ReasmIsEmpty(&ps.ctrack_replay->reasm_client))
+		if (ps.l7payload==L7P_TLS_CLIENT_HELLO || ps.ctrack_replay && ps.ctrack_replay->reasm_client_payload==L7P_TLS_CLIENT_HELLO && !ReasmIsEmpty(&ps.ctrack_replay->reasm_client))
 		{
 			ps.l7payload = L7P_TLS_CLIENT_HELLO;
 
@@ -1571,20 +1570,21 @@ static uint8_t dpi_desync_tcp_packet_play(
 				if (!bReqFull && ReasmIsEmpty(&ps.ctrack->reasm_client) && !is_retransmission(&ps.ctrack->pos.client))
 				{
 					// do not reconstruct unexpected large payload (they are feeding garbage ?)
-					if (!reasm_client_start(ps.ctrack, IPPROTO_TCP, TLSRecordLen(dis->data_payload), TCP_MAX_REASM, dis->data_payload, dis->len_payload))
-						goto pass_reasm_cancel;
+					// also do not reconstruct if server window size is low
+					if (!reasm_client_start(ps.ctrack, IPPROTO_TCP, L7P_TLS_CLIENT_HELLO, TLSRecordLen(dis->data_payload), TCP_MAX_REASM, dis->data_payload, dis->len_payload))
+						goto rediscover;
 				}
 
 				if (!ReasmIsEmpty(&ps.ctrack->reasm_client))
 				{
-					if (rawpacket_queue(&ps.ctrack->delayed, &ps.dst, fwmark, desync_fwmark, ifin, ifout, dis->data_pkt, dis->len_pkt, dis->len_payload, &ps.ctrack->pos))
+					if (rawpacket_queue(&ps.ctrack->delayed, &ps.dst, fwmark, desync_fwmark, ifin, ifout, dis->data_pkt, dis->len_pkt, dis->len_payload, &ps.ctrack->pos, false))
 					{
 						DLOG("DELAY desync until reasm is complete (#%u)\n", rawpacket_queue_count(&ps.ctrack->delayed));
 					}
 					else
 					{
 						DLOG_ERR("rawpacket_queue failed !\n");
-						goto pass_reasm_cancel;
+						goto rediscover;
 					}
 					if (ReasmIsFull(&ps.ctrack->reasm_client))
 					{
@@ -1596,8 +1596,16 @@ static uint8_t dpi_desync_tcp_packet_play(
 			}
 			ps.bHaveHost = TLSHelloExtractHost(rdata_payload, rlen_payload, ps.host, sizeof(ps.host), true);
 		}
+		else
+		{
+			reasm_client_cancel(ps.ctrack);
+			if (ps.l7payload==L7P_HTTP_REQ)
+				ps.bHaveHost = HttpExtractHost(rdata_payload, rlen_payload, ps.host, sizeof(ps.host));
+		}
 	}
 
+// UNSOLVED: if reasm is cancelled all packets except the last are passed as is without lua desync
+rediscover:
 	if (!dp_rediscovery(&ps))
 		goto pass_reasm_cancel;
 
@@ -1642,8 +1650,12 @@ static const uint8_t *dns_extract_name(const uint8_t *a, const uint8_t *b, const
 {
 	size_t nl, off;
 	const uint8_t *p;
-	bool bptr = (*a & 0xC0)==0xC0;
+	bool bptr;
+	uint8_t x,y;
 
+	if (!name_size) return NULL;
+
+	bptr = (*a & 0xC0)==0xC0;
 	if (bptr)
 	{
 		if (a+1>=e) return NULL;
@@ -1658,66 +1670,115 @@ static const uint8_t *dns_extract_name(const uint8_t *a, const uint8_t *b, const
 	if (p>=e) return NULL;
 	for (nl=0; *p ;)
 	{
-		if ((p+*p+1)>=e || (*p+1)>=(name_size-nl)) return NULL;
-		if (nl)	name[nl++] = '.';
-		memcpy(name + nl, p + 1, *p);
-		nl += *p;
-		p += *p + 1;
+		if (nl)
+		{
+			if (nl>=name_size) return NULL;
+			name[nl++] = '.';
+		}
+		// do not support mixed ptr+real
+		if ((*p & 0xC0) || (p+*p+1)>=e || (*p+1)>=(name_size-nl)) return NULL;
+		for(y=*p++,x=0 ; x<y ; x++,p++) name[nl+x] = tolower(*p);
+		nl += y;
 	}
+	if (nl>=name_size) return NULL;
 	name[nl] = 0;
 	return bptr ? a+2 : p+1;
 }
+static bool dns_skip_name(const uint8_t **a, size_t *len)
+{
+	// 11 higher bits indicate pointer
+	// lazy skip name. mixed compressed/uncompressed names are supported
+	for(;;)
+	{
+		if (*len<2) return false;
+		if ((**a & 0xC0)==0xC0)
+		{
+			// pointer is the end
+			(*a)+=2; (*len)-=2;
+			break;
+		}
+		if (!**a)
+		{
+			// zero length is the end
+			(*a)++; (*len)--;
+			break;
+		}
+		if (*len<(**a+1)) return false;
+		*len-=**a+1;
+		*a+=**a+1;
+	}
+	return true;
+}
+
 static bool feed_dns_response(const uint8_t *a, size_t len)
 {
 	if (!params.cache_hostname) return true;
 
 	// check of minimum header length and response flag
-	uint16_t k, off, dlen, qcount = a[4]<<8 | a[5], acount = a[6]<<8 | a[7];
-	char s_ip[40];
+	uint16_t k, typ, off, dlen, qcount = a[4]<<8 | a[5], acount = a[6]<<8 | a[7];
+	char s_ip[INET6_ADDRSTRLEN];
 	const uint8_t *b = a, *p;
 	const uint8_t *e = b + len;
 	size_t nl;
 	char name[256] = "";
 
-	if (len<12 || !(a[2]&0x80)) return false;
-	a+=12; len-=12;
-	for(k=0;k<qcount;k++)
+	if (!qcount || len<12 || !(a[2]&0x80)) return false;
+	if (!acount)
 	{
+		DLOG("skipping DNS response without answer\n");
+		return false;
+	}
+	a+=12; len-=12;
+	for(k=0,*name = 0 ; k<qcount ; k++)
+	{
+		if (*name) return false; // we do not support multiple queries with names
 		// remember original query name
 		if (!(p = dns_extract_name(a, b, e, name, sizeof(name)))) return false;
 		len -= p-a;
+		if ((len<4) || p[2] || p[3]!=1)	return false;
+		typ = pntoh16(p);
 		// must be A or AAAA query. others are not interesting
-		if ((len<4) || p[0] || p[1]!=1 && p[1]!=28 || p[2] || p[3]!=1) return false;
+		if (typ!=1 && typ!=28)
+		{
+			DLOG("skipping DNS query type %u for '%s'\n", typ, name);
+			return false;
+		}
+		else
+		{
+			DLOG("DNS query type %u for '%s'\n", typ, name);
+		}
 		// skip type, class
 		a=p+4; len-=4;
 	}
 	if (!*name) return false;
 	for(k=0;k<acount;k++)
 	{
-		// 11 higher bits indicate pointer
-		if (len<12 || (*a & 0xC0)!=0xC0) return false;
-
-		dlen = a[10]<<8 | a[11];
-		if (len<(dlen+12)) return false;
-		if (a[4]==0 && a[5]==1 && a[2]==0) // IN class and higher byte of type = 0
+		if (!dns_skip_name(&a,&len)) return false;
+		if (len<10) return false;
+		dlen = a[8]<<8 | a[9];
+		if (len<(dlen+10)) return false;
+		if (a[2]==0 && a[3]==1) // IN class
 		{
-			switch(a[3])
+			typ = pntoh16(a);
+			switch(typ)
 			{
 				case 1: // A
 					if (dlen!=4) break;
-					if (params.debug && inet_ntop(AF_INET, a+12, s_ip, sizeof(s_ip)))
-						DLOG("DNS response : %s\n", s_ip);
-					ipcache_put_hostname((struct in_addr *)(a+12), NULL, name, false);
+					if (params.debug && inet_ntop(AF_INET, a+10, s_ip, sizeof(s_ip)))
+						DLOG("DNS response type %u : %s\n", typ, s_ip);
+					ipcache_put_hostname((struct in_addr *)(a+10), NULL, name, false);
 					break;
 				case 28: // AAAA
 					if (dlen!=16) break;
-					if (params.debug && inet_ntop(AF_INET6, a+12, s_ip, sizeof(s_ip)))
-						DLOG("DNS response : %s\n", s_ip);
-					ipcache_put_hostname(NULL, (struct in6_addr *)(a+12), name, false);
+					if (params.debug && inet_ntop(AF_INET6, a+10, s_ip, sizeof(s_ip)))
+						DLOG("DNS response type %u : %s\n", typ, s_ip);
+					ipcache_put_hostname(NULL, (struct in6_addr *)(a+10), name, false);
 					break;
+				default:
+					DLOG("skipping DNS response type %u\n", typ);
 			}
 		}
-		len -= 12+dlen; a += 12+dlen;
+		len -= 10+dlen; a += 10+dlen;
 	}
 	return true;
 }
@@ -1775,7 +1836,7 @@ static uint8_t dpi_desync_udp_packet_play(
 						else
 						{
 							DLOG("QUIC reasm is too long. cancelling.\n");
-							goto pass_reasm_cancel;
+							goto rediscover_cancel;
 						}
 					}
 					size_t hello_offset, hello_len, defrag_len = sizeof(defrag);
@@ -1798,19 +1859,19 @@ static uint8_t dpi_desync_udp_packet_play(
 								if (bIsHello && !bReqFull && ReasmIsEmpty(&ps.ctrack->reasm_client))
 								{
 									// preallocate max buffer to avoid reallocs that cause memory copy
-									if (!reasm_client_start(ps.ctrack, IPPROTO_UDP, UDP_MAX_REASM, UDP_MAX_REASM, clean, clean_len))
-										goto pass_reasm_cancel;
+									if (!reasm_client_start(ps.ctrack, IPPROTO_UDP, L7P_QUIC_INITIAL, UDP_MAX_REASM, UDP_MAX_REASM, clean, clean_len))
+										goto rediscover_cancel;
 								}
 								if (!ReasmIsEmpty(&ps.ctrack->reasm_client))
 								{
-									if (rawpacket_queue(&ps.ctrack->delayed, &ps.dst, fwmark, desync_fwmark, ifin, ifout, dis->data_pkt, dis->len_pkt, dis->len_payload, &ps.ctrack->pos))
+									if (rawpacket_queue(&ps.ctrack->delayed, &ps.dst, fwmark, desync_fwmark, ifin, ifout, dis->data_pkt, dis->len_pkt, dis->len_payload, &ps.ctrack->pos, false))
 									{
 										DLOG("DELAY desync until reasm is complete (#%u)\n", rawpacket_queue_count(&ps.ctrack->delayed));
 									}
 									else
 									{
 										DLOG_ERR("rawpacket_queue failed !\n");
-										goto pass_reasm_cancel;
+										goto rediscover_cancel;
 									}
 									if (bReqFull)
 									{
@@ -1840,17 +1901,17 @@ static uint8_t dpi_desync_udp_packet_play(
 								if (ReasmIsEmpty(&ps.ctrack->reasm_client))
 								{
 									// preallocate max buffer to avoid reallocs that cause memory copy
-									if (!reasm_client_start(ps.ctrack, IPPROTO_UDP, UDP_MAX_REASM, UDP_MAX_REASM, clean, clean_len))
-										goto pass_reasm_cancel;
+									if (!reasm_client_start(ps.ctrack, IPPROTO_UDP, L7P_QUIC_INITIAL, UDP_MAX_REASM, UDP_MAX_REASM, clean, clean_len))
+										goto rediscover_cancel;
 								}
-								if (rawpacket_queue(&ps.ctrack->delayed, &ps.dst, fwmark, desync_fwmark, ifin, ifout, dis->data_pkt, dis->len_pkt, dis->len_payload, &ps.ctrack->pos))
+								if (rawpacket_queue(&ps.ctrack->delayed, &ps.dst, fwmark, desync_fwmark, ifin, ifout, dis->data_pkt, dis->len_pkt, dis->len_payload, &ps.ctrack->pos, false))
 								{
 									DLOG("DELAY desync until reasm is complete (#%u)\n", rawpacket_queue_count(&ps.ctrack->delayed));
 								}
 								else
 								{
 									DLOG_ERR("rawpacket_queue failed !\n");
-									goto pass_reasm_cancel;
+									goto rediscover_cancel;
 								}
 								return ct_new_postnat_fix(ps.ctrack, dis, mod_pkt, len_mod_pkt);
 							}
@@ -1875,18 +1936,16 @@ static uint8_t dpi_desync_udp_packet_play(
 			feed_dns_response(dis->data_payload, dis->len_payload);
 	} // len_payload
 
+// UNSOLVED: if reasm is cancelled all packets except the last are passed as is without lua desync
+rediscover_cancel:
 	reasm_client_cancel(ps.ctrack);
 
 	if (!dp_rediscovery(&ps))
 		goto pass;
 
 	ps.verdict = desync(ps.dp, fwmark, ifin, ifout, ps.bReverseFixed, ps.ctrack_replay, tpos, ps.l7payload, ps.l7proto, dis, ps.sdip4, ps.sdip6, ps.sdport, mod_pkt, len_mod_pkt, replay_piece, replay_piece_count, reasm_offset, NULL, 0, data_decrypt, len_decrypt);
-
 pass:
-	return (!ps.bReverse && (ps.verdict & VERDICT_MASK) == VERDICT_DROP) ? ct_new_postnat_fix(ps.ctrack, dis, mod_pkt, len_mod_pkt) : ps.verdict;
-pass_reasm_cancel:
-	reasm_client_cancel(ps.ctrack);
-	goto pass;
+	return (!ps.bReverseFixed && (ps.verdict & VERDICT_MASK) == VERDICT_DROP) ? ct_new_postnat_fix(ps.ctrack, dis, mod_pkt, len_mod_pkt) : ps.verdict;
 }
 
 // conntrack is supported only for RELATED icmp
@@ -1946,7 +2005,7 @@ static uint8_t dpi_desync_icmp_packet(
 				// invert direction. they are answering to this packet
 				bReverse = !bReverse;
 				DLOG("found conntrack entry. inverted reverse=%u\n",bReverse);
-				if (ctrack->dp_search_complete)
+				if (ctrack->dp_search_complete && ctrack->dp)
 				{
 					// RELATED icmp processed within base connection profile
 					dp = ctrack->dp;
@@ -2099,36 +2158,27 @@ static uint8_t dpi_desync_packet_play(
 	if (!!dis.ip != !!dis.ip6)
 	{
 		packet_debug(!!replay_piece_count, &dis);
+
 		// fix csum if unmodified and if OS can pass wrong csum to queue (depends on OS)
 		// modified means we have already fixed the checksum or made it invalid intentionally
 		// this is the only point we VIOLATE const to fix the checksum in the original buffer to avoid copying to mod_pkt
-		switch (dis.proto)
+		if (dis.tcp)
 		{
-		case IPPROTO_TCP:
-			if (dis.tcp)
-			{
-				verdict = dpi_desync_tcp_packet_play(replay_piece, replay_piece_count, reasm_offset, fwmark, ifin, ifout, tpos, &dis, mod_pkt, len_mod_pkt);
-				verdict_tcp_csum_fix(verdict, (struct tcphdr *)dis.tcp, dis.transport_len, dis.ip, dis.ip6);
-			}
-			break;
-		case IPPROTO_UDP:
-			if (dis.udp)
-			{
-				verdict = dpi_desync_udp_packet_play(replay_piece, replay_piece_count, reasm_offset, fwmark, ifin, ifout, tpos, &dis, mod_pkt, len_mod_pkt);
-				verdict_udp_csum_fix(verdict, (struct udphdr *)dis.udp, dis.transport_len, dis.ip, dis.ip6);
-			}
-			break;
-		case IPPROTO_ICMP:
-		case IPPROTO_ICMPV6:
-			if (dis.icmp)
-			{
-				verdict = dpi_desync_icmp_packet(fwmark, ifin, ifout, &dis, mod_pkt, len_mod_pkt);
-				verdict_icmp_csum_fix(verdict, (struct icmp46 *)dis.icmp, dis.transport_len, dis.ip6);
-			}
-			break;
-		default:
-			verdict = dpi_desync_ip_packet(fwmark, ifin, ifout, &dis, mod_pkt, len_mod_pkt);
+			verdict = dpi_desync_tcp_packet_play(replay_piece, replay_piece_count, reasm_offset, fwmark, ifin, ifout, tpos, &dis, mod_pkt, len_mod_pkt);
+			verdict_tcp_csum_fix(verdict, (struct tcphdr *)dis.tcp, dis.transport_len, dis.ip, dis.ip6);
 		}
+		else if (dis.udp)
+		{
+			verdict = dpi_desync_udp_packet_play(replay_piece, replay_piece_count, reasm_offset, fwmark, ifin, ifout, tpos, &dis, mod_pkt, len_mod_pkt);
+			verdict_udp_csum_fix(verdict, (struct udphdr *)dis.udp, dis.transport_len, dis.ip, dis.ip6);
+		}
+		else if (dis.icmp)
+		{
+			verdict = dpi_desync_icmp_packet(fwmark, ifin, ifout, &dis, mod_pkt, len_mod_pkt);
+			verdict_icmp_csum_fix(verdict, (struct icmp46 *)dis.icmp, dis.transport_len, dis.ip6);
+		}
+		else
+			verdict = dpi_desync_ip_packet(fwmark, ifin, ifout, &dis, mod_pkt, len_mod_pkt);
 	}
 	else
 		DLOG("invalid packet - neither ipv4 or ipv6\n");
@@ -2149,12 +2199,24 @@ static bool replay_queue(struct rawpacket_tailhead *q)
 	struct rawpacket *rp;
 	size_t offset;
 	unsigned int i, count;
-	bool b = true;
 	uint8_t mod[RECONSTRUCT_MAX_SIZE];
 	size_t modlen;
+	uint32_t seq0;
+	t_ctrack_position *pos;
+	bool b = true, bseq;
 
-	for (i = 0, offset = 0, count = rawpacket_queue_count(q); (rp = rawpacket_dequeue(q)); offset += rp->len_payload, rawpacket_free(rp), i++)
+	for (i = 0, offset = 0, count = rawpacket_queue_count(q); (rp = rawpacket_dequeue(q)); rawpacket_free(rp), i++)
 	{
+		// TCP: track reasm_offset using sequence numbers
+		if ((bseq = rp->tpos_present && rp->tpos.ipproto==IPPROTO_TCP))
+		{
+			pos = rp->server_side ? &rp->tpos.server : &rp->tpos.client;
+			if (i)
+				offset = pos->seq_last - seq0;
+			else
+				seq0 = pos->seq_last;
+		}
+
 		DLOG("REPLAYING delayed packet #%u offset %zu\n", i+1, offset);
 		modlen = sizeof(mod);
 		uint8_t verdict = dpi_desync_packet_play(i, count, offset, rp->fwmark_orig, rp->ifin, rp->ifout, rp->tpos_present ? &rp->tpos : NULL, rp->packet, rp->len, mod, &modlen);
@@ -2172,6 +2234,9 @@ static bool replay_queue(struct rawpacket_tailhead *q)
 			DLOG("DROPPING delayed packet #%u\n", i+1);
 			break;
 		}
+
+		if (!bseq)
+			offset += rp->len_payload;
 	}
 	return b;
 }
